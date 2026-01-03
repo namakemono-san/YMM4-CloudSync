@@ -21,17 +21,24 @@ jobs:
         with:
           dotnet-version: "10.0.x"
 
+      - name: Create Google Drive Credentials
+        run: |
+          $template = Get-Content "YMM4CloudSync.Core/Services/GoogleDriveCredentials.cs.template" -Raw
+          $content = $template -replace 'PLACEHOLDER_CLIENT_ID', '${{ secrets.GOOGLE_CLIENT_ID }}'
+          $content = $content -replace 'PLACEHOLDER_CLIENT_SECRET', '${{ secrets.GOOGLE_CLIENT_SECRET }}'
+          Set-Content "YMM4CloudSync.Core/Services/GoogleDriveCredentials.cs" $content
+
       - name: Publish
         run: dotnet publish --configuration Release -o publish
 
       - name: Copy README to publish folder
         run: Copy-Item ".github\assets\readme.txt" -Destination "publish\readme.txt"
-      
+
       - name: Create ZIP
-        run: powershell Compress-Archive -Path "publish\*" -DestinationPath "publish\YMM4CloudSync.zip"
+        run: Compress-Archive -Path "publish\*" -DestinationPath "publish\YMM4CloudSync.zip"
 
       - name: Rename ZIP to .ymme
-        run: powershell Move-Item publish\YMM4CloudSync.zip publish\YMM4CloudSync.ymme
+        run: Move-Item publish\YMM4CloudSync.zip publish\YMM4CloudSync.ymme
 
       - name: Create Release
         uses: ncipollo/release-action@v1
