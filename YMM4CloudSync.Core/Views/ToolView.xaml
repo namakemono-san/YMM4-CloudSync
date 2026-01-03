@@ -3,38 +3,88 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-        xmlns:local="clr-namespace:YMM4CloudSync.Core.Views"
         mc:Ignorable="d"
-        d:DesignHeight="450" d:DesignWidth="800">
-    <StackPanel>
-        <Grid Margin="10">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="*"/>
-                <RowDefinition Height="Auto"/>
-            </Grid.RowDefinitions>
+        d:DesignHeight="450" d:DesignWidth="300">
+    <Grid Margin="10">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
 
-            <TextBlock Grid.Row="0" 
-                       Text="Cloud Sync" 
-                       FontSize="16" 
-                       FontWeight="Bold"
-                       Margin="0,0,0,10"/>
+        <TextBlock Grid.Row="0" 
+                   Text="Cloud Sync" 
+                   FontSize="16" 
+                   FontWeight="Bold"
+                   Margin="0,0,0,10"/>
 
-            <Border Grid.Row="1" 
-                    BorderBrush="Gray" 
-                    BorderThickness="1"
-                    Margin="0,0,0,10">
-                <TextBlock Text="プロジェクト一覧（未実装）" 
-                           VerticalAlignment="Center" 
-                           HorizontalAlignment="Center"
-                           Foreground="Gray"/>
-            </Border>
+        <Border Grid.Row="1" 
+                BorderBrush="Gray" 
+                BorderThickness="1" 
+                Padding="10"
+                Margin="0,0,0,10">
+            <StackPanel>
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,5">
+                    <TextBlock Text="Google Drive: " FontWeight="Bold"/>
+                    <TextBlock x:Name="ConnectionStatus" Text="未接続" Foreground="Gray"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal">
+                    <Button x:Name="ConnectButton" 
+                            Content="接続" 
+                            Width="80" 
+                            Margin="0,0,5,0"
+                            Click="OnConnectClick"/>
+                    <Button x:Name="DisconnectButton" 
+                            Content="切断" 
+                            Width="80"
+                            IsEnabled="False"
+                            Click="OnDisconnectClick"/>
+                </StackPanel>
+            </StackPanel>
+        </Border>
 
-            <Button Grid.Row="2" 
-                    x:Name="ExportButton"
-                    Content="現在のプロジェクトを ymmx にエクスポート"
+        <TextBlock Grid.Row="2" Text="クラウド上のプロジェクト:" Margin="0,0,0,5"/>
+        
+        <ListBox Grid.Row="3" 
+                 x:Name="CloudFilesList"
+                 Margin="0,0,0,10"
+                 MinHeight="100">
+            <ListBox.ItemTemplate>
+                <DataTemplate>
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="{Binding Name}" Margin="0,0,10,0"/>
+                        <TextBlock Text="{Binding ModifiedTime, StringFormat='{}{0:yyyy/MM/dd HH:mm}'}" 
+                                   Foreground="Gray" FontSize="11"/>
+                    </StackPanel>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+
+        <StackPanel Grid.Row="4" x:Name="ProgressPanel" Visibility="Collapsed" Margin="0,0,0,10">
+            <TextBlock x:Name="ProgressText" Text="処理中..." Margin="0,0,0,5"/>
+            <ProgressBar x:Name="ProgressBar" Height="20" Minimum="0" Maximum="100"/>
+        </StackPanel>
+
+        <StackPanel Grid.Row="5">
+            <Button x:Name="UploadButton" 
+                    Content="現在のプロジェクトをアップロード" 
+                    Height="30" 
+                    Margin="0,0,0,5"
+                    IsEnabled="False"
+                    Click="OnUploadClick"/>
+            <Button x:Name="DownloadButton" 
+                    Content="選択したプロジェクトをダウンロード" 
+                    Height="30" 
+                    Margin="0,0,0,5"
+                    IsEnabled="False"
+                    Click="OnDownloadClick"/>
+            <Button x:Name="ExportLocalButton" 
+                    Content="ローカルにエクスポート" 
                     Height="30"
-                    Click="OnExportClick"/>
-        </Grid>
-    </StackPanel>
+                    Click="OnExportLocalClick"/>
+        </StackPanel>
+    </Grid>
 </UserControl>
