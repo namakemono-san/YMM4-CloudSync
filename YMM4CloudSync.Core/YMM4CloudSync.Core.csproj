@@ -16,16 +16,46 @@
     <DebugSymbols>false</DebugSymbols>
     <GenerateDependencyFile>false</GenerateDependencyFile>
     <GenerateRuntimeConfigurationFiles>false</GenerateRuntimeConfigurationFiles>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
     <OutDir>$(SolutionDir)build\$(Configuration)\</OutDir>
   </PropertyGroup>
 
   <ItemGroup>
-    <Reference Include="YukkuriMovieMaker.Plugin" HintPath="$(YMM4_PATH)\YukkuriMovieMaker.Plugin.dll" Private="false">
+    <Reference Include="YukkuriMovieMaker.Plugin"
+               HintPath="$(YMM4_PATH)\YukkuriMovieMaker.Plugin.dll"
+               Private="false">
       <ExcludeAssets>runtime</ExcludeAssets>
     </Reference>
-    <Reference Include="YukkuriMovieMaker.Controls" HintPath="$(YMM4_PATH)\YukkuriMovieMaker.Controls.dll" Private="false">
+
+    <Reference Include="YukkuriMovieMaker.Controls"
+               HintPath="$(YMM4_PATH)\YukkuriMovieMaker.Controls.dll"
+               Private="false">
       <ExcludeAssets>runtime</ExcludeAssets>
     </Reference>
   </ItemGroup>
-  
+
+  <ItemGroup>
+    <PackageReference Include="Google.Apis" Version="1.72.0"
+                      ExcludeAssets="runtime" />
+
+    <PackageReference Include="Google.Apis.Auth" Version="1.72.0"
+                      ExcludeAssets="runtime" />
+
+    <PackageReference Include="Google.Apis.Core" Version="1.72.0"
+                      ExcludeAssets="runtime" />
+
+    <PackageReference Include="System.Management" Version="10.0.1"
+                      ExcludeAssets="runtime"/>
+    
+    <PackageReference Include="Google.Apis.Drive.v3" Version="1.72.0.3970" />
+
+    <PackageReference Include="Costura.Fody" Version="5.7.0">
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+
+    <PackageReference Include="Fody" Version="6.8.2">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
 </Project>
