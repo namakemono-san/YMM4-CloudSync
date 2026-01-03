@@ -1,6 +1,7 @@
 ﻿using System.IO;
 using System.Windows;
 using YMM4CloudSync.YMMX.Core;
+using YMM4CloudSync.YMMX.Core.Models;
 
 namespace YMM4CloudSync.YMMX.Launcher.Views;
 
@@ -24,15 +25,24 @@ public partial class ProgressWindow : Window
         try
         {
             var outputDir = GetOutputDirectory();
-            
-            var ymmpPath = await Task.Run(() => YmmxExtractor.Extract(_ymmxPath, outputDir));
+
+            var result = await Task.Run(() => YmmxExtractor.Extract(
+                _ymmxPath, 
+                outputDir,
+                ConflictResolver));
+
+            if (!result.Success)
+            {
+                Close();
+                return;
+            }
 
             Progress.IsIndeterminate = false;
             Progress.Value = 100;
             PercentText.Text = "100%";
             StatusText.Text = "起動中...";
 
-            LaunchYmm(ymmpPath);
+            LaunchYmm(result.YmmpPath);
         }
         catch (InvalidOperationException ex)
         {
@@ -44,6 +54,32 @@ public partial class ProgressWindow : Window
             MessageBox.Show($"展開に失敗しました:\n{ex.Message}", "YMM4 Cloud Sync", MessageBoxButton.OK, MessageBoxImage.Error);
             Close();
         }
+    }
+
+    private ExtractConflictAction ConflictResolver(YmmxMeta? existing, YmmxMeta? incoming)
+    {
+        if (existing == null) return ExtractConflictAction.Overwrite;
+
+        var existingName = existing.Name;
+        var existingDate = existing.UpdatedAt.ToLocalTime().ToString("yyyy/MM/dd HH:mm");
+
+        var message = $"同じ場所に既存のプロジェクトがあります。\n\n" +
+                      $"既存: {existingName}\n" +
+                      $"更新日時: {existingDate}\n\n" +
+                      $"上書きしますか？";
+
+        var result = MessageBox.Show(
+            message,
+            "確認",
+            MessageBoxButton.YesNoCancel,
+            MessageBoxImage.Question);
+
+        return result switch
+        {
+            MessageBoxResult.Yes => ExtractConflictAction.Overwrite,
+            MessageBoxResult.No => ExtractConflictAction.CreateNew,
+            _ => ExtractConflictAction.Cancel
+        };
     }
 
     private string GetOutputDirectory()

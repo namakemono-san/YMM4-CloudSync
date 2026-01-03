@@ -7,6 +7,14 @@ using YMM4CloudSync.YMMX.Core.Models;
 
 namespace YMM4CloudSync.YMMX.Core;
 
+public class PackResult
+{
+    public bool Success { get; init; }
+    public string OutputPath { get; init; } = string.Empty;
+    public List<string> MissingFiles { get; init; } = [];
+    public List<string> Warnings { get; init; } = [];
+}
+
 public static class YmmxPacker
 {
     private static readonly Dictionary<string, string> TypeToFolder = new()
@@ -16,11 +24,19 @@ public static class YmmxPacker
         { "YukkuriMovieMaker.Project.Items.AudioItem", "audio" },
     };
 
-    // TODO: 導入しているプラグインも取得してパッケージングしたい
-    public static void Pack(string ymmpPath, string outputYmmxPath, string projectName)
+    public static PackResult Pack(string ymmpPath, string outputYmmxPath, string projectName)
     {
+        if (!File.Exists(ymmpPath))
+        {
+            throw new FileNotFoundException("ymmp ファイルが見つかりません。", ymmpPath);
+        }
+
+        var missingFiles = new List<string>();
+        var warnings = new List<string>();
+
         var ymmpContent = File.ReadAllText(ymmpPath);
-        var json = JsonNode.Parse(ymmpContent)!;
+        var json = JsonNode.Parse(ymmpContent) 
+            ?? throw new InvalidDataException("ymmp ファイルの解析に失敗しました。");
 
         var tempDir = Path.Combine(Path.GetTempPath(), $"ymmx_{Guid.NewGuid()}");
         Directory.CreateDirectory(tempDir);
@@ -31,14 +47,29 @@ public static class YmmxPacker
             Directory.CreateDirectory(assetsDir);
 
             var filePaths = new Dictionary<string, string>();
-            CollectAndRewritePaths(json, assetsDir, filePaths);
+            var usedFileNames = new Dictionary<string, HashSet<string>>();
+            
+            CollectAndRewritePaths(json, assetsDir, filePaths, usedFileNames, missingFiles);
 
             foreach (var (original, newPath) in filePaths)
             {
-                if (!File.Exists(original)) continue;
+                if (!File.Exists(original))
+                {
+                    missingFiles.Add(original);
+                    continue;
+                }
+
                 var destDir = Path.GetDirectoryName(newPath)!;
                 Directory.CreateDirectory(destDir);
-                File.Copy(original, newPath, overwrite: true);
+                
+                try
+                {
+                    File.Copy(original, newPath, overwrite: true);
+                }
+                catch (IOException ex)
+                {
+                    warnings.Add($"ファイルのコピーに失敗: {original} - {ex.Message}");
+                }
             }
 
             var ymmpOutputPath = Path.Combine(tempDir, "project.ymmp");
@@ -60,18 +91,43 @@ public static class YmmxPacker
             {
                 File.Delete(outputYmmxPath);
             }
+            
             ZipFile.CreateFromDirectory(tempDir, outputYmmxPath);
+
+            return new PackResult
+            {
+                Success = true,
+                OutputPath = outputYmmxPath,
+                MissingFiles = missingFiles,
+                Warnings = warnings
+            };
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException($"パッケージの作成に失敗しました: {ex.Message}", ex);
         }
         finally
         {
             if (Directory.Exists(tempDir))
             {
-                Directory.Delete(tempDir, true);
+                try
+                {
+                    Directory.Delete(tempDir, true);
+                }
+                catch
+                {
+                    // ignored
+                }
             }
         }
     }
 
-    private static void CollectAndRewritePaths(JsonNode node, string assetsDir, Dictionary<string, string> filePaths)
+    private static void CollectAndRewritePaths(
+        JsonNode node, 
+        string assetsDir, 
+        Dictionary<string, string> filePaths,
+        Dictionary<string, HashSet<string>> usedFileNames,
+        List<string> missingFiles)
     {
         switch (node)
         {
@@ -90,15 +146,31 @@ public static class YmmxPacker
                 if (obj.TryGetPropertyValue("FilePath", out var filePathNode) && filePathNode != null)
                 {
                     var originalPath = filePathNode.GetValue<string>();
-                    if (!string.IsNullOrEmpty(originalPath) && File.Exists(originalPath))
+                    if (!string.IsNullOrEmpty(originalPath))
                     {
-                        var fileName = Path.GetFileName(originalPath);
-                        var subFolder = folder ?? "other";
-                        var relativePath = $"assets/{subFolder}/{fileName}";
-                        var fullPath = Path.Combine(assetsDir, subFolder, fileName);
+                        if (!File.Exists(originalPath))
+                        {
+                            missingFiles.Add(originalPath);
+                        }
+                        else
+                        {
+                            var subFolder = folder ?? "other";
+                            
+                            if (!usedFileNames.TryGetValue(subFolder, out var value))
+                            {
+                                    value = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                                    usedFileNames[subFolder] = value;
+                            }
 
-                        filePaths[originalPath] = fullPath;
-                        obj["FilePath"] = relativePath;
+                            var uniqueFileName = GetUniqueFileName(originalPath, value);
+                                value.Add(uniqueFileName);
+
+                            var relativePath = $"assets/{subFolder}/{uniqueFileName}";
+                            var fullPath = Path.Combine(assetsDir, subFolder, uniqueFileName);
+
+                            filePaths[originalPath] = fullPath;
+                            obj["FilePath"] = relativePath;
+                        }
                     }
                 }
 
@@ -106,7 +178,7 @@ public static class YmmxPacker
                 {
                     if (prop.Value != null)
                     {
-                        CollectAndRewritePaths(prop.Value, assetsDir, filePaths);
+                        CollectAndRewritePaths(prop.Value, assetsDir, filePaths, usedFileNames, missingFiles);
                     }
                 }
 
@@ -118,12 +190,35 @@ public static class YmmxPacker
                 {
                     if (item != null)
                     {
-                        CollectAndRewritePaths(item, assetsDir, filePaths);
+                        CollectAndRewritePaths(item, assetsDir, filePaths, usedFileNames, missingFiles);
                     }
                 }
 
                 break;
             }
         }
+    }
+
+    private static string GetUniqueFileName(string originalPath, HashSet<string> usedNames)
+    {
+        var fileName = Path.GetFileName(originalPath);
+        
+        if (!usedNames.Contains(fileName))
+        {
+            return fileName;
+        }
+
+        var baseName = Path.GetFileNameWithoutExtension(fileName);
+        var ext = Path.GetExtension(fileName);
+        var counter = 1;
+
+        string candidate;
+        do
+        {
+            candidate = $"{baseName}_{counter}{ext}";
+            counter++;
+        } while (usedNames.Contains(candidate));
+
+        return candidate;
     }
 }
