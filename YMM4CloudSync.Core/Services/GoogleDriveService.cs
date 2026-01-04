@@ -27,8 +27,12 @@ public class GoogleDriveService : ICloudStorageService
 
     public async Task<bool> AuthenticateAsync()
     {
+        CancellationTokenSource? cts = null;
+
         try
         {
+            cts = new CancellationTokenSource(TimeSpan.FromMinutes(1));
+
             var credential = await GoogleWebAuthorizationBroker.AuthorizeAsync(
                 new ClientSecrets
                 {
@@ -37,7 +41,7 @@ public class GoogleDriveService : ICloudStorageService
                 },
                 Scopes,
                 "user",
-                CancellationToken.None,
+                cts.Token,
                 new FileDataStore(CredentialPath, true));
 
             _driveService = new DriveService(new BaseClientService.Initializer
@@ -50,10 +54,46 @@ public class GoogleDriveService : ICloudStorageService
 
             return true;
         }
+        catch (OperationCanceledException)
+        {
+            try
+            {
+                if (Directory.Exists(CredentialPath))
+                    Directory.Delete(CredentialPath, true);
+            }
+            catch
+            {
+                // ignored
+            }
+
+            _driveService?.Dispose();
+            _driveService = null;
+            _appFolderId = null;
+
+            return false;
+        }
         catch (Exception ex)
         {
+            try
+            {
+                if (Directory.Exists(CredentialPath))
+                    Directory.Delete(CredentialPath, true);
+            }
+            catch
+            {
+                // ignored
+            }
+
+            _driveService?.Dispose();
+            _driveService = null;
+            _appFolderId = null;
+
             System.Diagnostics.Debug.WriteLine($"[GoogleDrive] Auth error: {ex.Message}");
             return false;
+        }
+        finally
+        {
+            cts?.Dispose();
         }
     }
 
