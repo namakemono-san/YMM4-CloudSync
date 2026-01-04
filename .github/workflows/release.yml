@@ -23,10 +23,16 @@ jobs:
 
       - name: Create Google Drive Credentials
         run: |
-          $template = Get-Content "YMM4CloudSync.Core/Services/GoogleDriveCredentials.cs.template" -Raw
+          $template = Get-Content "YMM4CloudSync.Core/Services/GoogleDriveCredentials.cs.example" -Raw
           $content = $template -replace 'PLACEHOLDER_CLIENT_ID', '${{ secrets.GOOGLE_CLIENT_ID }}'
           $content = $content -replace 'PLACEHOLDER_CLIENT_SECRET', '${{ secrets.GOOGLE_CLIENT_SECRET }}'
           Set-Content "YMM4CloudSync.Core/Services/GoogleDriveCredentials.cs" $content
+
+      - name: Create OneDrive Credentials
+        run: |
+          $template = Get-Content "YMM4CloudSync.Core/Services/OneDriveCredentials.cs.example" -Raw
+          $content = $template -replace 'PLACEHOLDER_CLIENT_ID', '${{ secrets.ONEDRIVE_CLIENT_ID }}'
+          Set-Content "YMM4CloudSync.Core/Services/OneDriveCredentials.cs" $content
 
       - name: Publish
         run: dotnet publish --configuration Release -o publish
@@ -46,3 +52,5 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           tag: ${{ github.ref_name }}
           artifacts: publish/YMM4CloudSync.ymme
+          draft: true
+          prerelease: true
