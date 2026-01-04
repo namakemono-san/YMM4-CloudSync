@@ -25,32 +25,28 @@ public class ExtractResult
 public static class YmmxExtractor
 {
     public static ExtractResult Extract(
-        string ymmxPath, 
+        string ymmxPath,
         string outputDirectory,
         Func<YmmxMeta?, YmmxMeta?, ExtractConflictAction>? conflictResolver = null)
     {
         if (!File.Exists(ymmxPath))
-        {
             throw new FileNotFoundException("ymmx ファイルが見つかりません。", ymmxPath);
-        }
 
         var finalOutputDir = outputDirectory;
         if (Directory.Exists(outputDirectory))
         {
             var existingMetaPath = Path.Combine(outputDirectory, "meta.json");
             YmmxMeta? existingMeta = null;
-            
+
             if (File.Exists(existingMetaPath))
-            {
                 existingMeta = YmmxMeta.Load(existingMetaPath);
-            }
 
             var newMeta = ReadMetaFromZip(ymmxPath);
 
             if (conflictResolver != null)
             {
                 var action = conflictResolver(existingMeta, newMeta);
-                
+
                 switch (action)
                 {
                     case ExtractConflictAction.Cancel:
@@ -59,11 +55,11 @@ public static class YmmxExtractor
                             Success = false,
                             ExtractedDirectory = outputDirectory
                         };
-                    
+
                     case ExtractConflictAction.CreateNew:
                         finalOutputDir = GetUniqueDirectory(outputDirectory);
                         break;
-                    
+
                     case ExtractConflictAction.Overwrite:
                     default:
                         break;
@@ -72,7 +68,7 @@ public static class YmmxExtractor
         }
 
         Directory.CreateDirectory(finalOutputDir);
-        
+
         try
         {
             ZipFile.ExtractToDirectory(ymmxPath, finalOutputDir, overwriteFiles: true);
@@ -86,11 +82,9 @@ public static class YmmxExtractor
         var ymmpPath = Path.Combine(finalOutputDir, "project.ymmp");
 
         if (!File.Exists(metaPath))
-        {
             throw new InvalidDataException("meta.json が見つかりません。不正な ymmx ファイルです。");
-        }
 
-        var meta = YmmxMeta.Load(metaPath) 
+        var meta = YmmxMeta.Load(metaPath)
             ?? throw new InvalidDataException("meta.json の読み込みに失敗しました。");
 
         var versionError = VersionChecker.Validate(meta);
@@ -104,16 +98,16 @@ public static class YmmxExtractor
             {
                 // ignored
             }
-            
+
             throw new InvalidOperationException(versionError);
         }
 
         if (!File.Exists(ymmpPath))
-        {
             throw new InvalidDataException("project.ymmp が見つかりません。不正な ymmx ファイルです。");
-        }
 
         RewriteToAbsolutePaths(ymmpPath, finalOutputDir);
+
+        ymmpPath = RenameYmmpToYmmxName(ymmpPath, finalOutputDir, ymmxPath);
 
         return new ExtractResult
         {
@@ -124,19 +118,57 @@ public static class YmmxExtractor
         };
     }
 
+    private static string RenameYmmpToYmmxName(string ymmpPath, string outputDir, string ymmxPath)
+    {
+        var baseName = Path.GetFileNameWithoutExtension(ymmxPath);
+        var safeName = SanitizeFileName(baseName);
+
+        if (string.IsNullOrWhiteSpace(safeName))
+            return ymmpPath;
+
+        var desired = Path.Combine(outputDir, $"{safeName}.ymmp");
+
+        if (string.Equals(ymmpPath, desired, StringComparison.OrdinalIgnoreCase))
+            return ymmpPath;
+
+        var target = File.Exists(desired) ? GetUniqueFilePath(outputDir, safeName, ".ymmp") : desired;
+
+        File.Move(ymmpPath, target);
+        return target;
+    }
+
+    private static string SanitizeFileName(string name)
+    {
+        foreach (var c in Path.GetInvalidFileNameChars())
+            name = name.Replace(c, '_');
+
+        return name.Trim();
+    }
+
+    private static string GetUniqueFilePath(string dir, string baseName, string ext)
+    {
+        var counter = 1;
+        while (true)
+        {
+            var candidate = Path.Combine(dir, $"{baseName}_{counter}{ext}");
+            if (!File.Exists(candidate)) return candidate;
+            counter++;
+        }
+    }
+
     private static YmmxMeta? ReadMetaFromZip(string ymmxPath)
     {
         try
         {
             using var archive = ZipFile.OpenRead(ymmxPath);
             var metaEntry = archive.GetEntry("meta.json");
-            
+
             if (metaEntry == null) return null;
 
             using var stream = metaEntry.Open();
             using var reader = new StreamReader(stream);
             var json = reader.ReadToEnd();
-            
+
             return JsonSerializer.Deserialize<YmmxMeta>(json);
         }
         catch
@@ -149,7 +181,7 @@ public static class YmmxExtractor
     {
         var counter = 1;
         string candidate;
-        
+
         do
         {
             candidate = $"{basePath}_{counter}";
@@ -162,7 +194,7 @@ public static class YmmxExtractor
     private static void RewriteToAbsolutePaths(string ymmpPath, string baseDirectory)
     {
         var content = File.ReadAllText(ymmpPath);
-        var json = JsonNode.Parse(content) 
+        var json = JsonNode.Parse(content)
             ?? throw new InvalidDataException("ymmp ファイルの解析に失敗しました。");
 
         RewritePaths(json, baseDirectory);
@@ -189,9 +221,7 @@ public static class YmmxExtractor
                 foreach (var prop in obj)
                 {
                     if (prop.Value != null)
-                    {
                         RewritePaths(prop.Value, baseDirectory);
-                    }
                 }
 
                 break;
@@ -201,9 +231,7 @@ public static class YmmxExtractor
                 foreach (var item in arr)
                 {
                     if (item != null)
-                    {
                         RewritePaths(item, baseDirectory);
-                    }
                 }
 
                 break;

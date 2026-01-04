@@ -4,13 +4,13 @@ public interface ICloudStorageService
 {
     string ServiceName { get; }
     bool IsAuthenticated { get; }
-    
+
     Task<bool> AuthenticateAsync();
     Task LogoutAsync();
-    
+
+    Task<List<CloudFile>> ListFilesAsync(string? folderId = null);
     Task<string> UploadFileAsync(string localPath, string remotePath, IProgress<double>? progress = null);
     Task DownloadFileAsync(string remoteFileId, string localPath, IProgress<double>? progress = null);
-    Task<List<CloudFile>> ListFilesAsync(string? folderId = null);
     Task DeleteFileAsync(string fileId);
 }
 

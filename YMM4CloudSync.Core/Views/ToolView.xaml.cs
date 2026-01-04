@@ -1,7 +1,15 @@
-﻿using System.IO;
+﻿using System.Collections.ObjectModel;
+using System.Diagnostics;
+using System.IO;
+using System.Reflection;
 using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Input;
+using System.Windows.Navigation;
 using Microsoft.Win32;
+using Reactive.Bindings;
 using YMM4CloudSync.Core.Commons;
+using YMM4CloudSync.Core.Commons.License;
 using YMM4CloudSync.Core.Services;
 using YMM4CloudSync.YMMX.Core;
 
@@ -9,82 +17,145 @@ namespace YMM4CloudSync.Core.Views;
 
 public partial class ToolView
 {
-    private readonly GoogleDriveService _driveService = new();
-    private bool _isProcessing;
+    public ObservableCollection<LicenseTextViewModel> Licenses { get; } = new();
+    public ReactiveProperty<LicenseTextViewModel?> CurrentLicense { get; } = new();
+
+    public ObservableCollection<CloudServiceItem> CloudServices { get; } = new();
+    public ReactiveProperty<CloudServiceItem?> SelectedCloudService { get; } = new();
+
+    bool _isProcessing;
+
+    ICloudStorageService? CurrentService => SelectedCloudService.Value?.Service;
+    bool IsConnected => SelectedCloudService.Value?.IsConnected == true;
 
     public ToolView()
     {
         InitializeComponent();
+        DataContext = this;
         Loaded += OnLoaded;
+
+        CloudServices.Add(new CloudServiceItem(new GoogleDriveService()));
+        CloudServices.Add(new CloudServiceItem(new OneDriveService()));
+
+        SelectedCloudService.Value = CloudServices.FirstOrDefault();
+
+        SelectedCloudService.Subscribe(async _ =>
+        {
+            CloudFilesList.ItemsSource = null;
+
+            var ok = IsConnected;
+            UploadButton.IsEnabled = ok;
+            RefreshButton.IsEnabled = ok;
+
+            if (ok)
+                await RefreshFileListAsync();
+        });
     }
 
-    // ReSharper disable once AsyncVoidMethod
-    private async void OnLoaded(object sender, RoutedEventArgs e)
+    async void OnLoaded(object sender, RoutedEventArgs e)
     {
+        LoadVersionInfo();
+        LoadChangelog();
+        LoadLicense();
+
         await TryAutoConnectAsync();
     }
 
-    private async Task TryAutoConnectAsync()
+    void LoadVersionInfo()
+    {
+        var version = Assembly.GetExecutingAssembly().GetName().Version;
+        VersionText.Text = $"Version {version?.ToString(3) ?? "1.0.0"}";
+    }
+
+    void LoadChangelog()
     {
         try
         {
-            var credentialPath = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "YMM4CloudSync", "google_credentials");
+            var pluginDir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)!;
+            var changelogPath = Path.Combine(pluginDir, "Resources", "ChangeLog.txt");
 
-            if (Directory.Exists(credentialPath) && Directory.GetFiles(credentialPath).Length > 0)
+            ChangelogText.Text = File.Exists(changelogPath)
+                ? File.ReadAllText(changelogPath)
+                : "更新履歴ファイルが見つかりません。";
+        }
+        catch (Exception ex)
+        {
+            ChangelogText.Text = $"読み込みに失敗しました: {ex.Message}";
+        }
+    }
+
+    void LoadLicense()
+    {
+        var licenses = LicenseLoader.Load()
+            .Select(x => new LicenseTextViewModel(x))
+            .OrderBy(x => x.Name)
+            .ToList();
+
+        Licenses.Clear();
+        foreach (var l in licenses)
+            Licenses.Add(l);
+
+        CurrentLicense.Value = Licenses.FirstOrDefault();
+    }
+
+    async Task TryAutoConnectAsync()
+    {
+        foreach (var item in CloudServices)
+        {
+            try
             {
-                await ConnectAsync();
+                var ok = await item.Service.AuthenticateAsync();
+                item.IsConnected = ok && item.Service.IsAuthenticated;
+            }
+            catch
+            {
+                item.IsConnected = false;
             }
         }
-        catch
-        {
-            // ignored
-        }
+
+        if (IsConnected)
+            await RefreshFileListAsync();
     }
 
-    // ReSharper disable once AsyncVoidMethod
-    private async void OnConnectClick(object sender, RoutedEventArgs e)
-    {
-        await ConnectAsync();
-    }
-
-    private async Task ConnectAsync()
+    async void OnServiceToggleClick(object sender, RoutedEventArgs e)
     {
         if (_isProcessing) return;
+        if (sender is not Button b) return;
+        if (b.Tag is not CloudServiceItem item) return;
 
         _isProcessing = true;
-        ConnectButton.IsEnabled = false;
-        ConnectionStatus.Text = "接続中...";
-
         try
         {
-            var success = await _driveService.AuthenticateAsync();
-
-            if (success)
+            if (item.IsConnected)
             {
-                ConnectionStatus.Text = "接続済み";
-                ConnectionStatus.Foreground = System.Windows.Media.Brushes.Green;
-                ConnectButton.IsEnabled = false;
-                DisconnectButton.IsEnabled = true;
-                UploadButton.IsEnabled = true;
-                DownloadButton.IsEnabled = true;
+                var r = MessageBox.Show($"{item.Name} との接続を解除しますか？", "確認",
+                    MessageBoxButton.YesNo, MessageBoxImage.Question);
+                if (r != MessageBoxResult.Yes) return;
 
-                await RefreshFileListAsync();
+                await item.Service.LogoutAsync();
+                item.IsConnected = false;
+
+                if (SelectedCloudService.Value == item)
+                    CloudFilesList.ItemsSource = null;
             }
             else
             {
-                ConnectionStatus.Text = "接続失敗";
-                ConnectionStatus.Foreground = System.Windows.Media.Brushes.Red;
-                ConnectButton.IsEnabled = true;
+                bool ok;
+                
+                if (item.Service is OneDriveService one)
+                    ok = await one.AuthenticateInteractiveAsync();
+                else
+                    ok = await item.Service.AuthenticateAsync();
+                
+                item.IsConnected = ok && item.Service.IsAuthenticated;
+
+                if (SelectedCloudService.Value == item && item.IsConnected)
+                    await RefreshFileListAsync();
             }
         }
         catch (Exception ex)
         {
-            ConnectionStatus.Text = "エラー";
-            ConnectionStatus.Foreground = System.Windows.Media.Brushes.Red;
-            ConnectButton.IsEnabled = true;
-            MessageBox.Show($"接続に失敗しました。\n{ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show(ex.Message, "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
         }
         finally
         {
@@ -92,107 +163,104 @@ public partial class ToolView
         }
     }
 
-    // ReSharper disable once AsyncVoidMethod
-    private async void OnDisconnectClick(object sender, RoutedEventArgs e)
+    async void OnRefreshClick(object sender, RoutedEventArgs e)
     {
-        var result = MessageBox.Show(
-            "Google Drive との接続を解除しますか？",
-            "確認",
-            MessageBoxButton.YesNo,
-            MessageBoxImage.Question);
-
-        if (result != MessageBoxResult.Yes) return;
-
-        await _driveService.LogoutAsync();
-
-        ConnectionStatus.Text = "未接続";
-        ConnectionStatus.Foreground = System.Windows.Media.Brushes.Gray;
-        ConnectButton.IsEnabled = true;
-        DisconnectButton.IsEnabled = false;
-        UploadButton.IsEnabled = false;
-        DownloadButton.IsEnabled = false;
-        CloudFilesList.ItemsSource = null;
+        if (_isProcessing || !IsConnected) return;
+        await RefreshFileListAsync();
     }
 
-    private async Task RefreshFileListAsync()
+    async Task RefreshFileListAsync()
     {
+        var svc = CurrentService;
+        if (svc == null || !IsConnected) return;
+
         try
         {
-            var files = await _driveService.ListFilesAsync();
+            var files = await svc.ListFilesAsync();
             var ymmxFiles = files.Where(f => f.Name.EndsWith(".ymmx", StringComparison.OrdinalIgnoreCase)).ToList();
             CloudFilesList.ItemsSource = ymmxFiles;
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"ファイル一覧の取得に失敗しました。\n{ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show($"ファイル一覧の取得に失敗しました。\n{ex.Message}", "エラー",
+                MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
 
-    // ReSharper disable once AsyncVoidMethod
-    private async void OnUploadClick(object sender, RoutedEventArgs e)
+    void OnListDoubleClick(object sender, MouseButtonEventArgs e)
     {
-        if (_isProcessing || !_driveService.IsAuthenticated) return;
+        if (CloudFilesList.SelectedItem is CloudFile f)
+            _ = OpenProjectAsync(f);
+    }
+
+    CloudFile? GetCloudFileFromSender(object sender)
+    {
+        if (sender is Button button && button.Tag is CloudFile file) return file;
+        if (sender is MenuItem) return CloudFilesList.SelectedItem as CloudFile;
+        return null;
+    }
+
+    async void OnOpenClick(object sender, RoutedEventArgs e)
+    {
+        var file = GetCloudFileFromSender(sender);
+        if (file != null) await OpenProjectAsync(file);
+    }
+
+    async Task OpenProjectAsync(CloudFile file)
+    {
+        var svc = CurrentService;
+        if (_isProcessing || svc == null || !IsConnected) return;
 
         _isProcessing = true;
-        SetProcessingState(true, "保存中...");
+        SetProcessingState(true, "ダウンロード中...");
 
         try
         {
-            var saved = YmmHelper.SaveProject();
-            if (!saved)
-            {
-                MessageBox.Show("プロジェクトの保存に失敗しました。", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
-                return;
-            }
+            var tempDir = Path.Combine(Path.GetTempPath(), "YMM4CloudSync");
+            Directory.CreateDirectory(tempDir);
+            var tempPath = Path.Combine(tempDir, file.Name);
 
-            var ymmpPath = YmmHelper.GetCurrentProjectPath();
-            if (string.IsNullOrEmpty(ymmpPath))
-            {
-                MessageBox.Show("プロジェクトが保存されていません。", "エラー", MessageBoxButton.OK, MessageBoxImage.Warning);
-                return;
-            }
-
-            var projectName = Path.GetFileNameWithoutExtension(ymmpPath);
-            var tempYmmxPath = Path.Combine(Path.GetTempPath(), $"{projectName}.ymmx");
-
-            SetProcessingState(true, "パッケージ作成中...");
-            var packResult = await Task.Run(() => YmmxPacker.Pack(ymmpPath, tempYmmxPath, projectName));
-
-            if (!packResult.Success)
-            {
-                MessageBox.Show("パッケージの作成に失敗しました。", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
-                return;
-            }
-
-            SetProcessingState(true, "アップロード中...");
             var progress = new Progress<double>(p =>
             {
                 ProgressBar.Value = p;
-                ProgressText.Text = $"アップロード中... {p:F0}%";
+                ProgressText.Text = $"ダウンロード中... {p:F0}%";
             });
 
-            await _driveService.UploadFileAsync(tempYmmxPath, $"{projectName}.ymmx", progress);
+            await svc.DownloadFileAsync(file.Id, tempPath, progress);
 
-            try { File.Delete(tempYmmxPath); }
-            catch
+            SetProcessingState(true, "展開中...");
+
+            var appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            var projectName = Path.GetFileNameWithoutExtension(file.Name);
+            var outputDir = Path.Combine(appData, "YMM4CloudSync", "Projects", projectName);
+
+            var result = await Task.Run(() => YmmxExtractor.Extract(tempPath, outputDir));
+
+            if (result.Success)
             {
-                // ignored
+                var ymmPath = FindYmmPath();
+                if (ymmPath != null)
+                {
+                    Process.Start(new ProcessStartInfo
+                    {
+                        FileName = ymmPath,
+                        Arguments = $"\"{result.YmmpPath}\"",
+                        UseShellExecute = true
+                    });
+                }
+                else
+                {
+                    MessageBox.Show($"展開が完了しました。\n{result.YmmpPath}\n\nYMM4 が見つからなかったため、手動で開いてください。",
+                        "完了", MessageBoxButton.OK, MessageBoxImage.Information);
+                }
             }
 
-            await RefreshFileListAsync();
-
-            var message = "アップロードが完了しました。";
-            if (packResult.MissingFiles.Count > 0)
-            {
-                message += $"\n\n⚠️ 見つからなかったファイル: {packResult.MissingFiles.Count} 件";
-            }
-
-            MessageBox.Show(message, "完了", MessageBoxButton.OK, 
-                packResult.MissingFiles.Count > 0 ? MessageBoxImage.Warning : MessageBoxImage.Information);
+            try { File.Delete(tempPath); } catch { }
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"アップロードに失敗しました。\n{ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show($"プロジェクトを開けませんでした。\n{ex.Message}", "エラー",
+                MessageBoxButton.OK, MessageBoxImage.Error);
         }
         finally
         {
@@ -201,23 +269,25 @@ public partial class ToolView
         }
     }
 
-    // ReSharper disable once AsyncVoidMethod
-    private async void OnDownloadClick(object sender, RoutedEventArgs e)
+    async void OnDownloadClick(object sender, RoutedEventArgs e)
     {
-        if (_isProcessing || !_driveService.IsAuthenticated) return;
+        var svc = CurrentService;
+        var file = GetCloudFileFromSender(sender);
 
-        var selectedFile = CloudFilesList.SelectedItem as CloudFile;
-        if (selectedFile == null)
+        if (file == null)
         {
-            MessageBox.Show("ダウンロードするファイルを選択してください。", "確認", MessageBoxButton.OK, MessageBoxImage.Information);
+            MessageBox.Show("ダウンロードするファイルを選択してください。", "確認",
+                MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
+
+        if (_isProcessing || svc == null || !IsConnected) return;
 
         var saveDialog = new SaveFileDialog
         {
             Title = "保存先を選択",
             Filter = "YMMX ファイル (*.ymmx)|*.ymmx",
-            FileName = selectedFile.Name
+            FileName = file.Name
         };
 
         if (saveDialog.ShowDialog() != true) return;
@@ -233,13 +303,15 @@ public partial class ToolView
                 ProgressText.Text = $"ダウンロード中... {p:F0}%";
             });
 
-            await _driveService.DownloadFileAsync(selectedFile.Id, saveDialog.FileName, progress);
+            await svc.DownloadFileAsync(file.Id, saveDialog.FileName, progress);
 
-            MessageBox.Show($"ダウンロードが完了しました。\n{saveDialog.FileName}", "完了", MessageBoxButton.OK, MessageBoxImage.Information);
+            MessageBox.Show($"ダウンロードが完了しました。\n{saveDialog.FileName}", "完了",
+                MessageBoxButton.OK, MessageBoxImage.Information);
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"ダウンロードに失敗しました。\n{ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show($"ダウンロードに失敗しました。\n{ex.Message}", "エラー",
+                MessageBoxButton.OK, MessageBoxImage.Error);
         }
         finally
         {
@@ -248,10 +320,52 @@ public partial class ToolView
         }
     }
 
-    // ReSharper disable once AsyncVoidMethod
-    private async void OnExportLocalClick(object sender, RoutedEventArgs e)
+    async void OnDeleteClick(object sender, RoutedEventArgs e)
     {
-        if (_isProcessing) return;
+        var svc = CurrentService;
+        var file = GetCloudFileFromSender(sender);
+
+        if (file == null)
+        {
+            MessageBox.Show("削除するファイルを選択してください。", "確認",
+                MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        if (_isProcessing || svc == null || !IsConnected) return;
+
+        var result = MessageBox.Show(
+            $"「{file.Name}」を削除しますか？\n\nこの操作は取り消せません。",
+            "削除の確認",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning);
+
+        if (result != MessageBoxResult.Yes) return;
+
+        _isProcessing = true;
+        SetProcessingState(true, "削除中...");
+
+        try
+        {
+            await svc.DeleteFileAsync(file.Id);
+            await RefreshFileListAsync();
+            MessageBox.Show("削除が完了しました。", "完了", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"削除に失敗しました。\n{ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+        finally
+        {
+            _isProcessing = false;
+            SetProcessingState(false);
+        }
+    }
+
+    async void OnUploadClick(object sender, RoutedEventArgs e)
+    {
+        var svc = CurrentService;
+        if (_isProcessing || svc == null || !IsConnected) return;
 
         _isProcessing = true;
         SetProcessingState(true, "保存中...");
@@ -261,45 +375,56 @@ public partial class ToolView
             var saved = YmmHelper.SaveProject();
             if (!saved)
             {
-                MessageBox.Show("プロジェクトの保存に失敗しました。", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show("プロジェクトの保存に失敗しました。", "エラー",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
                 return;
             }
 
             var ymmpPath = YmmHelper.GetCurrentProjectPath();
             if (string.IsNullOrEmpty(ymmpPath))
             {
-                MessageBox.Show("プロジェクトが保存されていません。", "エラー", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show("プロジェクトが保存されていません。", "エラー",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
-            var saveDialog = new SaveFileDialog
-            {
-                Title = "ymmx ファイルの保存先",
-                Filter = "YMMX ファイル (*.ymmx)|*.ymmx",
-                FileName = Path.GetFileNameWithoutExtension(ymmpPath) + ".ymmx",
-                InitialDirectory = Path.GetDirectoryName(ymmpPath)
-            };
-
-            if (saveDialog.ShowDialog() != true) return;
-
             var projectName = Path.GetFileNameWithoutExtension(ymmpPath);
+            var tempYmmxPath = Path.Combine(Path.GetTempPath(), $"{projectName}.ymmx");
 
             SetProcessingState(true, "パッケージ作成中...");
-            var result = await Task.Run(() => YmmxPacker.Pack(ymmpPath, saveDialog.FileName, projectName));
+            var packResult = await Task.Run(() => YmmxPacker.Pack(ymmpPath, tempYmmxPath, projectName));
 
-            if (!result.Success) return;
-            
-            var message = $"エクスポートが完了しました。\n{result.OutputPath}";
-            if (result.MissingFiles.Count > 0)
+            if (!packResult.Success)
             {
-                message += $"\n\n⚠️ 見つからなかったファイル: {result.MissingFiles.Count} 件";
+                MessageBox.Show("パッケージの作成に失敗しました。", "エラー",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
             }
+
+            SetProcessingState(true, "アップロード中...");
+            var progress = new Progress<double>(p =>
+            {
+                ProgressBar.Value = p;
+                ProgressText.Text = $"アップロード中... {p:F0}%";
+            });
+
+            await svc.UploadFileAsync(tempYmmxPath, $"{projectName}.ymmx", progress);
+
+            try { File.Delete(tempYmmxPath); } catch { }
+
+            await RefreshFileListAsync();
+
+            var message = "保存が完了しました。";
+            if (packResult.MissingFiles.Count > 0)
+                message += $"\n\n見つからなかったファイル: {packResult.MissingFiles.Count} 件";
+
             MessageBox.Show(message, "完了", MessageBoxButton.OK,
-                result.MissingFiles.Count > 0 ? MessageBoxImage.Warning : MessageBoxImage.Information);
+                packResult.MissingFiles.Count > 0 ? MessageBoxImage.Warning : MessageBoxImage.Information);
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"エクスポートに失敗しました。\n{ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show($"保存に失敗しました。\n{ex.Message}", "エラー",
+                MessageBoxButton.OK, MessageBoxImage.Error);
         }
         finally
         {
@@ -308,14 +433,27 @@ public partial class ToolView
         }
     }
 
-    private void SetProcessingState(bool isProcessing, string? message = null)
+    void SetProcessingState(bool isProcessing, string? message = null)
     {
         ProgressPanel.Visibility = isProcessing ? Visibility.Visible : Visibility.Collapsed;
         ProgressText.Text = message ?? "処理中...";
         ProgressBar.Value = 0;
 
-        UploadButton.IsEnabled = !isProcessing && _driveService.IsAuthenticated;
-        DownloadButton.IsEnabled = !isProcessing && _driveService.IsAuthenticated;
-        ExportLocalButton.IsEnabled = !isProcessing;
+        UploadButton.IsEnabled = !isProcessing && IsConnected;
+        RefreshButton.IsEnabled = !isProcessing && IsConnected;
+    }
+
+    static string? FindYmmPath()
+    {
+        var processes = Process.GetProcessesByName("YukkuriMovieMaker");
+        if (processes.Length > 0)
+            return processes[0].MainModule?.FileName;
+
+        var defaultPath = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.Desktop),
+            "YukkuriMovieMaker_v4",
+            "YukkuriMovieMaker.exe");
+
+        return File.Exists(defaultPath) ? defaultPath : null;
     }
 }

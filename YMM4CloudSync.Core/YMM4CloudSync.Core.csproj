@@ -9,6 +9,7 @@
   
   <PropertyGroup>
     <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <Version>0.1.0</Version>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <UseWPF>true</UseWPF>
@@ -17,35 +18,36 @@
     <GenerateDependencyFile>false</GenerateDependencyFile>
     <GenerateRuntimeConfigurationFiles>false</GenerateRuntimeConfigurationFiles>
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <DisableFastUpToDateCheck>true</DisableFastUpToDateCheck>
     <OutDir>$(SolutionDir)build\$(Configuration)\</OutDir>
   </PropertyGroup>
 
   <ItemGroup>
-    <Reference Include="YukkuriMovieMaker.Plugin"
-               HintPath="$(YMM4_PATH)\YukkuriMovieMaker.Plugin.dll"
-               Private="false">
+    <Reference Include="YukkuriMovieMaker.Plugin" HintPath="$(YMM4_PATH)\YukkuriMovieMaker.Plugin.dll" Private="false">
       <ExcludeAssets>runtime</ExcludeAssets>
     </Reference>
 
-    <Reference Include="YukkuriMovieMaker.Controls"
-               HintPath="$(YMM4_PATH)\YukkuriMovieMaker.Controls.dll"
-               Private="false">
+    <Reference Include="YukkuriMovieMaker.Controls" HintPath="$(YMM4_PATH)\YukkuriMovieMaker.Controls.dll" Private="false">
       <ExcludeAssets>runtime</ExcludeAssets>
     </Reference>
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Google.Apis" Version="1.72.0"
-                      ExcludeAssets="runtime" />
+    <PackageReference Include="Google.Apis" Version="1.72.0" ExcludeAssets="runtime" />
 
-    <PackageReference Include="Google.Apis.Auth" Version="1.72.0"
-                      ExcludeAssets="runtime" />
+    <PackageReference Include="Google.Apis.Auth" Version="1.72.0" ExcludeAssets="runtime" />
 
-    <PackageReference Include="Google.Apis.Core" Version="1.72.0"
-                      ExcludeAssets="runtime" />
+    <PackageReference Include="Google.Apis.Core" Version="1.72.0" ExcludeAssets="runtime" />
 
-    <PackageReference Include="System.Management" Version="10.0.1"
-                      ExcludeAssets="runtime"/>
+    <PackageReference Include="MahApps.Metro.IconPacks.Material" Version="6.2.1" />
+
+    <PackageReference Include="Microsoft.Identity.Client" Version="4.79.2" />
+
+    <PackageReference Include="ReactiveProperty.Core" Version="8.2.0" ExcludeAssets="runtime" />
+    
+    <PackageReference Include="ReactiveProperty" Version="8.2.0" ExcludeAssets="runtime" />
+
+    <PackageReference Include="System.Management" Version="10.0.1" ExcludeAssets="runtime" />
     
     <PackageReference Include="Google.Apis.Drive.v3" Version="1.72.0.3970" />
 
@@ -58,4 +60,28 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
   </ItemGroup>
+  
+  <ItemGroup>
+    <Content Include="Resources\License\**\*.txt">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <TargetPath>Resources\License\%(RecursiveDir)%(Filename)%(Extension)</TargetPath>
+    </Content>
+    <Content Include="Resources\ChangeLog.txt">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <TargetPath>Resources\ChangeLog.txt</TargetPath>
+    </Content>
+  </ItemGroup>
+
+  <Target Name="PostBuild" AfterTargets="Build">
+    <ItemGroup>
+      <BuildArtifacts Include="$(OutDir)**\*.*" />
+      <DeployDest Include="@(BuildArtifacts->'$(YMM4_PATH)\user\plugin\YMM4CloudSync\%(RecursiveDir)%(Filename)%(Extension)')" />
+      <DeployDirs Include="@(DeployDest->'$([System.IO.Path]::GetDirectoryName(%(Identity)))')" />
+    </ItemGroup>
+
+    <Copy SourceFiles="@(BuildArtifacts)"
+          DestinationFiles="@(DeployDest)"
+          SkipUnchangedFiles="true" />
+  </Target>
+
 </Project>

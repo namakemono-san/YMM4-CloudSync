@@ -3,88 +3,224 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks"
         mc:Ignorable="d"
         d:DesignHeight="450" d:DesignWidth="300">
-    <Grid Margin="10">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-        </Grid.RowDefinitions>
+    
+    <UserControl.Resources>
+        <ContextMenu x:Key="ProjectContextMenu">
+            <MenuItem Header="開く" Click="OnOpenClick">
+                <MenuItem.Icon>
+                    <iconPacks:PackIconMaterial Kind="FolderOpen" Width="16" Height="16"/>
+                </MenuItem.Icon>
+            </MenuItem>
+            <MenuItem Header="ダウンロード" Click="OnDownloadClick">
+                <MenuItem.Icon>
+                    <iconPacks:PackIconMaterial Kind="Download" Width="16" Height="16"/>
+                </MenuItem.Icon>
+            </MenuItem>
+            <Separator/>
+            <MenuItem Header="削除" Click="OnDeleteClick" Foreground="Red">
+                <MenuItem.Icon>
+                    <iconPacks:PackIconMaterial Kind="Delete" Width="16" Height="16" Foreground="Red"/>
+                </MenuItem.Icon>
+            </MenuItem>
+        </ContextMenu>
+    </UserControl.Resources>
 
-        <TextBlock Grid.Row="0" 
-                   Text="Cloud Sync" 
-                   FontSize="16" 
-                   FontWeight="Bold"
-                   Margin="0,0,0,10"/>
+    <TabControl>
+        <TabItem Header="プロジェクト">
+            <Grid Margin="10">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
 
-        <Border Grid.Row="1" 
-                BorderBrush="Gray" 
-                BorderThickness="1" 
-                Padding="10"
-                Margin="0,0,0,10">
-            <StackPanel>
-                <StackPanel Orientation="Horizontal" Margin="0,0,0,5">
-                    <TextBlock Text="Google Drive: " FontWeight="Bold"/>
-                    <TextBlock x:Name="ConnectionStatus" Text="未接続" Foreground="Gray"/>
+                <Grid Grid.Row="0" Margin="0,0,0,5">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+
+                    <TextBlock Grid.Column="0"
+                               Text="プロジェクト一覧"
+                               VerticalAlignment="Center"
+                               FontWeight="Bold"/>
+
+                    <ComboBox Grid.Column="2"
+                              Width="160"
+                              Margin="0,0,8,0"
+                              ItemsSource="{Binding CloudServices}"
+                              DisplayMemberPath="Name"
+                              SelectedItem="{Binding SelectedCloudService.Value, Mode=TwoWay}"/>
+
+                    <Button Grid.Column="3"
+                            x:Name="RefreshButton"
+                            Padding="5,2"
+                            Click="OnRefreshClick"
+                            ToolTip="更新"
+                            IsEnabled="False">
+                        <iconPacks:PackIconMaterial Kind="Refresh" Width="12" Height="12"/>
+                    </Button>
+                </Grid>
+
+                <ListBox Grid.Row="1" 
+                         x:Name="CloudFilesList"
+                         Margin="0,0,0,10"
+                         MinHeight="100"
+                         HorizontalContentAlignment="Stretch"
+                         ContextMenu="{StaticResource ProjectContextMenu}"
+                         MouseDoubleClick="OnListDoubleClick">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <DockPanel Margin="2">
+                                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <Button Padding="4" Margin="2,0" ToolTip="開く" 
+                                            Click="OnOpenClick" Tag="{Binding}">
+                                        <iconPacks:PackIconMaterial Kind="FolderOpen" Width="14" Height="14"/>
+                                    </Button>
+                                    <Button Padding="4" Margin="2,0" ToolTip="ダウンロード"
+                                            Click="OnDownloadClick" Tag="{Binding}">
+                                        <iconPacks:PackIconMaterial Kind="Download" Width="14" Height="14"/>
+                                    </Button>
+                                    <Button Padding="4" Margin="2,0" ToolTip="削除"
+                                            Click="OnDeleteClick" Tag="{Binding}">
+                                        <iconPacks:PackIconMaterial Kind="Delete" Width="14" Height="14" Foreground="Red"/>
+                                    </Button>
+                                </StackPanel>
+
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding Name}" FontWeight="Medium"/>
+                                    <TextBlock Text="{Binding ModifiedTime, StringFormat='{}{0:yyyy/MM/dd HH:mm}'}" 
+                                               Foreground="Gray" FontSize="11"/>
+                                </StackPanel>
+                            </DockPanel>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+
+                <StackPanel Grid.Row="2" x:Name="ProgressPanel" Visibility="Collapsed" Margin="0,0,0,10">
+                    <TextBlock x:Name="ProgressText" Text="処理中..." Margin="0,0,0,5"/>
+                    <ProgressBar x:Name="ProgressBar" Height="20" Minimum="0" Maximum="100"/>
                 </StackPanel>
-                <StackPanel Orientation="Horizontal">
-                    <Button x:Name="ConnectButton" 
-                            Content="接続" 
-                            Width="80" 
-                            Margin="0,0,5,0"
-                            Click="OnConnectClick"/>
-                    <Button x:Name="DisconnectButton" 
-                            Content="切断" 
-                            Width="80"
-                            IsEnabled="False"
-                            Click="OnDisconnectClick"/>
-                </StackPanel>
-            </StackPanel>
-        </Border>
 
-        <TextBlock Grid.Row="2" Text="クラウド上のプロジェクト:" Margin="0,0,0,5"/>
-        
-        <ListBox Grid.Row="3" 
-                 x:Name="CloudFilesList"
-                 Margin="0,0,0,10"
-                 MinHeight="100">
-            <ListBox.ItemTemplate>
-                <DataTemplate>
+                <Button Grid.Row="3"
+                        x:Name="UploadButton" 
+                        Height="35" 
+                        IsEnabled="False"
+                        Click="OnUploadClick">
                     <StackPanel Orientation="Horizontal">
-                        <TextBlock Text="{Binding Name}" Margin="0,0,10,0"/>
-                        <TextBlock Text="{Binding ModifiedTime, StringFormat='{}{0:yyyy/MM/dd HH:mm}'}" 
-                                   Foreground="Gray" FontSize="11"/>
+                        <iconPacks:PackIconMaterial Kind="CloudUpload" Width="18" Height="18" Margin="0,0,8,0"/>
+                        <TextBlock Text="プロジェクトを保存" VerticalAlignment="Center"/>
                     </StackPanel>
-                </DataTemplate>
-            </ListBox.ItemTemplate>
-        </ListBox>
+                </Button>
+            </Grid>
+        </TabItem>
 
-        <StackPanel Grid.Row="4" x:Name="ProgressPanel" Visibility="Collapsed" Margin="0,0,0,10">
-            <TextBlock x:Name="ProgressText" Text="処理中..." Margin="0,0,0,5"/>
-            <ProgressBar x:Name="ProgressBar" Height="20" Minimum="0" Maximum="100"/>
-        </StackPanel>
+        <TabItem Header="連携">
+            <StackPanel Margin="10">
+                <ItemsControl ItemsSource="{Binding CloudServices}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Grid Margin="0,0,0,10">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
 
-        <StackPanel Grid.Row="5">
-            <Button x:Name="UploadButton" 
-                    Content="現在のプロジェクトをアップロード" 
-                    Height="30" 
-                    Margin="0,0,0,5"
-                    IsEnabled="False"
-                    Click="OnUploadClick"/>
-            <Button x:Name="DownloadButton" 
-                    Content="選択したプロジェクトをダウンロード" 
-                    Height="30" 
-                    Margin="0,0,0,5"
-                    IsEnabled="False"
-                    Click="OnDownloadClick"/>
-            <Button x:Name="ExportLocalButton" 
-                    Content="ローカルにエクスポート" 
-                    Height="30"
-                    Click="OnExportLocalClick"/>
-        </StackPanel>
-    </Grid>
+                                <TextBlock Grid.Column="0"
+                                           Text="{Binding Name}"
+                                           FontWeight="Bold"
+                                           VerticalAlignment="Center"/>
+
+                                <TextBlock Grid.Column="1" Margin="8,0" VerticalAlignment="Center">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Text" Value="未連携"/>
+                                            <Setter Property="Foreground" Value="#FFB71C1C"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsConnected}" Value="True">
+                                                    <Setter Property="Text" Value="連携済み"/>
+                                                    <Setter Property="Foreground" Value="#FF2E7D32"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+
+                                <Button Grid.Column="2"
+                                        Width="70"
+                                        Click="OnServiceToggleClick"
+                                        Tag="{Binding}">
+                                    <TextBlock>
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Text" Value="連携"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsConnected}" Value="True">
+                                                        <Setter Property="Text" Value="解除"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                </Button>
+                            </Grid>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+        </TabItem>
+
+        <TabItem Header="情報">
+            <Grid Margin="10">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+
+                <StackPanel Grid.Row="0" Margin="0,0,0,15">
+                    <TextBlock Text="YMM4 Cloud Sync" FontSize="18" FontWeight="Bold"/>
+                    <TextBlock x:Name="VersionText" Text="Version 1.0.0" Foreground="Gray" Margin="0,2,0,0"/>
+                </StackPanel>
+
+                <Grid Grid.Row="2">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <TabControl Grid.Row="1">
+                        <TabItem Header="更新履歴">
+                            <TextBox x:Name="ChangelogText" IsReadOnly="True" VerticalScrollBarVisibility="Auto" TextWrapping="Wrap"
+                                     Text="{Binding ChangelogText, Mode=OneWay}"/>
+                        </TabItem>
+                        <TabItem Header="ライセンス">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="175"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <ListBox Grid.Column="0"
+                                         ItemsSource="{Binding Licenses}"
+                                         DisplayMemberPath="Name"
+                                         SelectedItem="{Binding CurrentLicense.Value, Mode=TwoWay, TargetNullValue=''}" />
+                                <TextBox Grid.Column="1"
+                                         IsReadOnly="True"
+                                         VerticalScrollBarVisibility="Auto"
+                                         TextWrapping="Wrap"
+                                         Text="{Binding CurrentLicense.Value.Text, Mode=OneWay, TargetNullValue=''}" />
+                            </Grid>
+                        </TabItem>
+                    </TabControl>
+                </Grid>
+            </Grid>
+        </TabItem>
+    </TabControl>
 </UserControl>

@@ -1,0 +1,298 @@
+﻿using System.IO;
+using System.Net.Http;
+using Microsoft.Identity.Client;
+using System.Net.Http.Headers;
+using System.Text.Json;
+using YMM4CloudSync.Core.Commons;
+
+namespace YMM4CloudSync.Core.Services;
+
+public sealed class OneDriveService : ICloudStorageService
+{
+    public string ServiceName => "OneDrive";
+    public bool IsAuthenticated => _pca != null && _account != null;
+
+    private static readonly string[] Scopes = ["Files.ReadWrite.AppFolder"];
+    private const string GraphBase = "https://graph.microsoft.com/v1.0";
+
+    private static readonly string TokenCachePath =
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "YMM4CloudSync", "onedrive_msal_cache.bin");
+
+    private IPublicClientApplication? _pca;
+    private IAccount? _account;
+    private readonly HttpClient _http = new();
+
+    public async Task<bool> AuthenticateAsync()
+    {
+        try
+        {
+            EnsureClient();
+
+            var accounts = await _pca!.GetAccountsAsync();
+            _account = accounts.FirstOrDefault();
+
+            var silent = await _pca.AcquireTokenSilent(Scopes, _account).ExecuteAsync();
+            _account = silent.Account;
+
+            return true;
+        }
+        catch
+        {
+            _account = null;
+            return false;
+        }
+    }
+
+    public async Task<bool> AuthenticateInteractiveAsync()
+    {
+        try
+        {
+            EnsureClient();
+
+            var interactive = await _pca!.AcquireTokenInteractive(Scopes)
+                .WithPrompt(Prompt.SelectAccount)
+                .ExecuteAsync();
+
+            _account = interactive.Account;
+            return true;
+        }
+        catch
+        {
+            _account = null;
+            return false;
+        }
+    }
+
+    public async Task LogoutAsync()
+    {
+        if (_pca != null)
+        {
+            var accounts = await _pca.GetAccountsAsync();
+            foreach (var a in accounts)
+                await _pca.RemoveAsync(a);
+        }
+
+        _account = null;
+
+        if (File.Exists(TokenCachePath))
+            File.Delete(TokenCachePath);
+    }
+
+    public async Task<List<CloudFile>> ListFilesAsync(string? folderId = null)
+    {
+        EnsureAuthenticated();
+
+        var url = folderId is null
+            ? $"{GraphBase}/me/drive/special/approot/children?$orderby=lastModifiedDateTime desc"
+            : $"{GraphBase}/me/drive/items/{folderId}/children?$orderby=lastModifiedDateTime desc";
+
+        using var resp = await SendAsync(HttpMethod.Get, url, null);
+        await EnsureSuccessOrThrowAsync(resp, "ファイル一覧の取得");
+
+        await using var s = await resp.Content.ReadAsStreamAsync();
+        var doc = await JsonDocument.ParseAsync(s);
+
+        var list = new List<CloudFile>();
+
+        foreach (var item in doc.RootElement.GetProperty("value").EnumerateArray())
+        {
+            var id = item.GetProperty("id").GetString() ?? "";
+            var name = item.GetProperty("name").GetString() ?? "";
+            var size = item.TryGetProperty("size", out var sz) ? sz.GetInt64() : (long?)null;
+            var modified = item.TryGetProperty("lastModifiedDateTime", out var lm) ? lm.GetDateTime() : (DateTime?)null;
+            var isFolder = item.TryGetProperty("folder", out _);
+
+            list.Add(new CloudFile(
+                id,
+                name,
+                isFolder ? "application/vnd.microsoft.folder" : "application/octet-stream",
+                size,
+                modified));
+        }
+
+        return list;
+    }
+
+    public async Task<string> UploadFileAsync(string localPath, string remotePath, IProgress<double>? progress = null)
+    {
+        EnsureAuthenticated();
+
+        if (!File.Exists(localPath))
+            throw new FileNotFoundException("ファイルが見つかりません。", localPath);
+
+        await using var fs = new FileStream(localPath, FileMode.Open, FileAccess.Read, FileShare.Read);
+        var url = $"{GraphBase}/me/drive/special/approot:/{EscapePath(remotePath)}:/content";
+
+        using var content = new ProgressStreamContent(fs, fs.Length, progress);
+        content.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
+
+        using var resp = await SendAsync(HttpMethod.Put, url, content);
+        await EnsureSuccessOrThrowAsync(resp, "アップロード");
+
+        await using var s = await resp.Content.ReadAsStreamAsync();
+        var doc = await JsonDocument.ParseAsync(s);
+
+        return doc.RootElement.GetProperty("id").GetString() ?? "";
+    }
+
+    public async Task DownloadFileAsync(string remoteFileId, string localPath, IProgress<double>? progress = null)
+    {
+        EnsureAuthenticated();
+
+        var url = $"{GraphBase}/me/drive/items/{remoteFileId}/content";
+
+        var dir = Path.GetDirectoryName(localPath);
+        if (!string.IsNullOrEmpty(dir))
+            Directory.CreateDirectory(dir);
+
+        using var resp = await SendAsync(HttpMethod.Get, url, null, HttpCompletionOption.ResponseHeadersRead);
+        await EnsureSuccessOrThrowAsync(resp, "ダウンロード");
+
+        var total = resp.Content.Headers.ContentLength ?? 0;
+
+        await using var input = await resp.Content.ReadAsStreamAsync();
+        await using var output = new FileStream(localPath, FileMode.Create, FileAccess.Write, FileShare.None);
+
+        await CopyWithProgressAsync(input, output, total, progress);
+    }
+
+    public async Task DeleteFileAsync(string fileId)
+    {
+        EnsureAuthenticated();
+
+        using var resp = await SendAsync(HttpMethod.Delete, $"{GraphBase}/me/drive/items/{fileId}", null);
+        await EnsureSuccessOrThrowAsync(resp, "削除");
+    }
+
+    private void EnsureClient()
+    {
+        if (_pca != null) return;
+
+        _pca = PublicClientApplicationBuilder
+            .Create(OneDriveCredentials.ClientId)
+            .WithAuthority("https://login.microsoftonline.com/consumers")
+            .WithRedirectUri("http://localhost")
+            .Build();
+
+        RegisterTokenCache(_pca.UserTokenCache);
+    }
+
+    private void EnsureAuthenticated()
+    {
+        EnsureClient();
+        if (_account == null)
+            throw new InvalidOperationException("OneDrive に連携されていません。\n連携タブからサインインしてください。");
+    }
+
+    private async Task<string> GetAccessTokenAsync()
+    {
+        EnsureClient();
+
+        if (_account == null)
+            throw new InvalidOperationException("OneDrive に連携されていません。\n連携タブからサインインしてください。");
+
+        var result = await _pca!.AcquireTokenSilent(Scopes, _account).ExecuteAsync();
+        return result.AccessToken;
+    }
+
+    private async Task<HttpResponseMessage> SendAsync(
+        HttpMethod method,
+        string url,
+        HttpContent? content,
+        HttpCompletionOption completion = HttpCompletionOption.ResponseContentRead)
+    {
+        var token = await GetAccessTokenAsync();
+        using var req = new HttpRequestMessage(method, url);
+        req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        if (content != null) req.Content = content;
+        return await _http.SendAsync(req, completion);
+    }
+
+    private static async Task EnsureSuccessOrThrowAsync(HttpResponseMessage resp, string actionName)
+    {
+        if (resp.IsSuccessStatusCode) return;
+
+        var code = (int)resp.StatusCode;
+
+        string? graphMessage = null;
+        try
+        {
+            var body = await resp.Content.ReadAsStringAsync();
+            if (!string.IsNullOrWhiteSpace(body))
+            {
+                using var doc = JsonDocument.Parse(body);
+                if (doc.RootElement.TryGetProperty("error", out var err) &&
+                    err.TryGetProperty("message", out var msg))
+                {
+                    graphMessage = msg.GetString();
+                }
+            }
+        }
+        catch
+        {
+            // ignored
+        }
+
+        var message = code switch
+        {
+            400 => "要求が不正です。\nファイル名やパスに使えない文字が含まれている可能性があります。",
+            401 => "認証が切れました。\n連携を解除して再連携してください。",
+            403 => "アクセス権がありません。\n許可が必要な可能性があります。",
+            404 => "ファイルが見つかりませんでした。\nクラウド側で削除された可能性があります。",
+            409 => "競合が発生しました。\n同名ファイルが存在する可能性があります。",
+            413 => "ファイルが大きすぎます。",
+            429 => "アクセスが集中しています。\n少し待ってから再試行してください。",
+            507 => "OneDrive の空き容量が不足しています。\n不要なファイルを削除してごみ箱も空にしてください。",
+            >= 500 => "OneDrive 側の問題で操作できません。\n時間をおいて再試行してください。",
+            _ => $"OneDrive 操作に失敗しました。(HTTP {code})"
+        };
+
+        if (!string.IsNullOrWhiteSpace(graphMessage))
+            message = $"{message}\n\n詳細: {graphMessage}";
+
+        throw new InvalidOperationException($"{message}");
+    }
+
+    private static async Task CopyWithProgressAsync(Stream input, Stream output, long total, IProgress<double>? progress)
+    {
+        var buffer = new byte[64 * 1024];
+        long done = 0;
+
+        while (true)
+        {
+            var read = await input.ReadAsync(buffer);
+            if (read == 0) break;
+
+            await output.WriteAsync(buffer.AsMemory(0, read));
+            done += read;
+
+            if (total > 0)
+                progress?.Report(done * 100.0 / total);
+        }
+    }
+
+    private static string EscapePath(string path)
+    {
+        path = path.Replace('\\', '/').TrimStart('/');
+        return string.Join("/", path.Split('/', StringSplitOptions.RemoveEmptyEntries)
+            .Select(Uri.EscapeDataString));
+    }
+
+    private static void RegisterTokenCache(ITokenCache cache)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(TokenCachePath)!);
+
+        cache.SetBeforeAccess(args =>
+        {
+            if (File.Exists(TokenCachePath))
+                args.TokenCache.DeserializeMsalV3(File.ReadAllBytes(TokenCachePath));
+        });
+
+        cache.SetAfterAccess(args =>
+        {
+            if (args.HasStateChanged)
+                File.WriteAllBytes(TokenCachePath, args.TokenCache.SerializeMsalV3());
+        });
+    }
+}

@@ -518,5 +518,6 @@ $RECYCLE.BIN/
 # Original
 build/
 GoogleDriveCredentials.cs
+OneDriveCredentials.cs
 
 # End of https://www.toptal.com/developers/gitignore/api/rider,csharp,windows,dotfilessh,dotsettings,dotnetcore
