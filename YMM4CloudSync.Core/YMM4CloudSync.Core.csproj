@@ -22,14 +22,22 @@
     <OutDir>$(SolutionDir)build\$(Configuration)\</OutDir>
   </PropertyGroup>
 
-  <ItemGroup>
-    <Reference Include="YukkuriMovieMaker.Plugin" HintPath="$(YMM4_PATH)\YukkuriMovieMaker.Plugin.dll" Private="false">
-      <ExcludeAssets>runtime</ExcludeAssets>
-    </Reference>
+  <ItemGroup Condition="Exists('$(YMM4_PATH)\YukkuriMovieMaker.Plugin.dll')">
+    <Reference Include="YukkuriMovieMaker.Plugin"
+               HintPath="$(YMM4_PATH)\YukkuriMovieMaker.Plugin.dll"
+               Private="false" ExcludeAssets="runtime" />
+    <Reference Include="YukkuriMovieMaker.Controls"
+               HintPath="$(YMM4_PATH)\YukkuriMovieMaker.Controls.dll"
+               Private="false" ExcludeAssets="runtime" />
+  </ItemGroup>
 
-    <Reference Include="YukkuriMovieMaker.Controls" HintPath="$(YMM4_PATH)\YukkuriMovieMaker.Controls.dll" Private="false">
-      <ExcludeAssets>runtime</ExcludeAssets>
-    </Reference>
+  <ItemGroup Condition="!Exists('$(YMM4_PATH)\YukkuriMovieMaker.Plugin.dll')">
+    <Reference Include="YukkuriMovieMaker.Plugin"
+               HintPath="..\libs\YMM4\YukkuriMovieMaker.Plugin.dll"
+               Private="false" ExcludeAssets="runtime" />
+    <Reference Include="YukkuriMovieMaker.Controls"
+               HintPath="..\libs\YMM4\YukkuriMovieMaker.Controls.dll"
+               Private="false" ExcludeAssets="runtime" />
   </ItemGroup>
 
   <ItemGroup>
