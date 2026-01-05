@@ -36,8 +36,27 @@ public class Plugin : IPlugin, IToolPlugin
         );
 
         if (result != MessageBoxResult.Yes) return;
-        
-        _ymmxFileExtension.Register();
-        MessageBox.Show("関連付けが完了しました。", "YMM4 CloudSync", MessageBoxButton.OK, MessageBoxImage.Information);
+
+        try
+        {
+            _ymmxFileExtension.Register();
+            MessageBox.Show("関連付けが完了しました。", "YMM4 CloudSync", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            MessageBox.Show(
+                "ファイル関連付けの登録に失敗しました。\n\n管理者権限が必要な場合があります。\nYMM4を管理者として実行するか、手動でレジストリを設定してください。",
+                "権限エラー",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(
+                $"ファイル関連付けの登録に失敗しました。\n\n{ex.Message}",
+                "エラー",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+        }
     }
 }
