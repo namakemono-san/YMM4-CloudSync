@@ -10,13 +10,27 @@ public static class VersionChecker
 
     private static bool IsCompatible(YmmxMeta meta)
     {
-        var current = Version.Parse(CurrentVersion);
-        var minRequired = Version.Parse(meta.MinPluginVersion);
-        return current >= minRequired;
+        try
+        {
+            var current = Version.Parse(CurrentVersion);
+            var minRequired = Version.Parse(meta.MinPluginVersion);
+            return current >= minRequired;
+        }
+        catch (FormatException)
+        {
+            return true;
+        }
     }
 
     public static string? Validate(YmmxMeta meta)
     {
-        return !IsCompatible(meta) ? $"このファイルにはプラグイン v{meta.MinPluginVersion} 以上が必要です。\n現在のバージョン: v{CurrentVersion}" : null;
+        try
+        {
+            return !IsCompatible(meta) ? $"このファイルにはプラグイン v{meta.MinPluginVersion} 以上が必要です。\n現在のバージョン: v{CurrentVersion}" : null;
+        }
+        catch (FormatException)
+        {
+            return null;
+        }
     }
 }
