@@ -20,7 +20,8 @@ public sealed class OneDriveService : ICloudStorageService, IDisposable
     private static readonly string TokenCachePath =
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "YMM4CloudSync", "onedrive_msal_cache.bin");
-
+    private static readonly Lock FileLock = new();
+    
     private IPublicClientApplication? _pca;
     private IAccount? _account;
     private readonly HttpClient _http = new();
@@ -396,19 +397,21 @@ public sealed class OneDriveService : ICloudStorageService, IDisposable
     {
         cache.SetBeforeAccess(args =>
         {
-            var data = SecureStorageHelper.Load(TokenCachePath);
-            if (data != null)
+            lock (FileLock)
             {
-                args.TokenCache.DeserializeMsalV3(data);
+                var data = SecureStorageHelper.Load(TokenCachePath);
+                if (data != null) args.TokenCache.DeserializeMsalV3(data);
             }
         });
 
         cache.SetAfterAccess(args =>
         {
             if (!args.HasStateChanged) return;
-            
-            var data = args.TokenCache.SerializeMsalV3();
-            SecureStorageHelper.Save(TokenCachePath, data);
+            lock (FileLock)
+            {
+                var data = args.TokenCache.SerializeMsalV3();
+                SecureStorageHelper.Save(TokenCachePath, data);
+            }
         });
     }
 }
