@@ -6,7 +6,7 @@ using YukkuriMovieMaker.Plugin;
 
 namespace YMM4CloudSync.Core;
 
-public class Plugin : IPlugin, IToolPlugin
+public class Plugin : IToolPlugin
 {
     public string Name => "YMM4 Cloud Sync";
 
@@ -22,8 +22,34 @@ public class Plugin : IPlugin, IToolPlugin
     public Plugin()
     {
         CheckFileAssociation();
+        Task.Run(CleanUpTempFiles);
     }
+    
+    private void CleanUpTempFiles()
+    {
+        try
+        {
+            var tempPath = Path.GetTempPath();
+            var directories = Directory.GetDirectories(tempPath, "ymmx_*");
 
+            foreach (var dir in directories)
+            {
+                try
+                {
+                    Directory.Delete(dir, true);
+                }
+                catch
+                {
+                    // ignored
+                }
+            }
+        }
+        catch
+        {
+            // ignored
+        }
+    }
+    
     private void CheckFileAssociation()
     {
         if (_ymmxFileExtension.IsRegistered()) return;
@@ -59,4 +85,4 @@ public class Plugin : IPlugin, IToolPlugin
                 MessageBoxImage.Error);
         }
     }
-}
+}
