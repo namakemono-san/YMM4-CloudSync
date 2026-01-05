@@ -151,32 +151,41 @@ public static class YmmxPacker
                 if (obj.TryGetPropertyValue("FilePath", out var filePathNode) && filePathNode != null)
                 {
                     var originalPath = filePathNode.GetValue<string>();
-                    if (!string.IsNullOrEmpty(originalPath) && !filePaths.ContainsKey(originalPath))
+                    if (!string.IsNullOrEmpty(originalPath))
                     {
-                        if (!File.Exists(originalPath))
+                        if (filePaths.TryGetValue(originalPath, out var existingFullPath))
                         {
-                            if (!missingFiles.Contains(originalPath))
-                                missingFiles.Add(originalPath);
+                            var relativeFromAssets = Path.GetRelativePath(assetsDir, existingFullPath);
+                            var relativePath = $"assets/{relativeFromAssets}".Replace("\\", "/");
+                            obj["FilePath"] = relativePath;
                         }
                         else
                         {
-                            var subFolder = folder ?? "other";
-                            var subFolderPath = Path.Combine(assetsDir, subFolder);
-                            
-                            if (!usedFileNames.TryGetValue(subFolder, out var value))
+                            if (!File.Exists(originalPath))
                             {
-                                    value = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                                    usedFileNames[subFolder] = value;
+                                if (!missingFiles.Contains(originalPath))
+                                    missingFiles.Add(originalPath);
                             }
+                            else
+                            {
+                                var subFolder = folder ?? "other";
+                                var subFolderPath = Path.Combine(assetsDir, subFolder);
+                
+                                if (!usedFileNames.TryGetValue(subFolder, out var usedNames))
+                                {
+                                    usedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                                    usedFileNames[subFolder] = usedNames;
+                                }
 
-                            var uniqueFileName = GetUniqueFileName(originalPath, value, subFolderPath);
-                                value.Add(uniqueFileName);
+                                var uniqueFileName = GetUniqueFileName(originalPath, usedNames, subFolderPath);
+                                usedNames.Add(uniqueFileName);
 
-                            var relativePath = $"assets/{subFolder}/{uniqueFileName}";
-                            var fullPath = Path.Combine(assetsDir, subFolder, uniqueFileName);
+                                var relativePath = $"assets/{subFolder}/{uniqueFileName}";
+                                var fullPath = Path.Combine(assetsDir, subFolder, uniqueFileName);
 
-                            filePaths[originalPath] = fullPath;
-                            obj["FilePath"] = relativePath;
+                                filePaths[originalPath] = fullPath;
+                                obj["FilePath"] = relativePath;
+                            }
                         }
                     }
                 }
