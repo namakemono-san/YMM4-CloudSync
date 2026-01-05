@@ -146,15 +146,17 @@ public static class YmmxPacker
                 if (obj.TryGetPropertyValue("FilePath", out var filePathNode) && filePathNode != null)
                 {
                     var originalPath = filePathNode.GetValue<string>();
-                    if (!string.IsNullOrEmpty(originalPath))
+                    if (!string.IsNullOrEmpty(originalPath) && !filePaths.ContainsKey(originalPath))
                     {
                         if (!File.Exists(originalPath))
                         {
-                            missingFiles.Add(originalPath);
+                            if (!missingFiles.Contains(originalPath))
+                                missingFiles.Add(originalPath);
                         }
                         else
                         {
                             var subFolder = folder ?? "other";
+                            var subFolderPath = Path.Combine(assetsDir, subFolder);
                             
                             if (!usedFileNames.TryGetValue(subFolder, out var value))
                             {
@@ -162,7 +164,7 @@ public static class YmmxPacker
                                     usedFileNames[subFolder] = value;
                             }
 
-                            var uniqueFileName = GetUniqueFileName(originalPath, value);
+                            var uniqueFileName = GetUniqueFileName(originalPath, value, subFolderPath);
                                 value.Add(uniqueFileName);
 
                             var relativePath = $"assets/{subFolder}/{uniqueFileName}";
@@ -199,11 +201,11 @@ public static class YmmxPacker
         }
     }
 
-    private static string GetUniqueFileName(string originalPath, HashSet<string> usedNames)
+    private static string GetUniqueFileName(string originalPath, HashSet<string> usedNames, string targetDir)
     {
         var fileName = Path.GetFileName(originalPath);
         
-        if (!usedNames.Contains(fileName))
+        if (!usedNames.Contains(fileName) && !File.Exists(Path.Combine(targetDir, fileName)))
         {
             return fileName;
         }
@@ -217,8 +219,8 @@ public static class YmmxPacker
         {
             candidate = $"{baseName}_{counter}{ext}";
             counter++;
-        } while (usedNames.Contains(candidate));
+        } while (usedNames.Contains(candidate) || File.Exists(Path.Combine(targetDir, candidate)));
 
         return candidate;
     }
-}
+}
