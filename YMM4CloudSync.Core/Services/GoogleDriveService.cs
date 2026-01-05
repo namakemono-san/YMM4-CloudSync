@@ -31,7 +31,7 @@ public class GoogleDriveService : ICloudStorageService
 
         try
         {
-            cts = new CancellationTokenSource(TimeSpan.FromMinutes(1));
+            cts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
 
             var credential = await GoogleWebAuthorizationBroker.AuthorizeAsync(
                 new ClientSecrets
