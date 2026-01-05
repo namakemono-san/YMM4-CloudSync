@@ -256,8 +256,8 @@ public static class YmmxExtractor
         
         var files = Directory.GetFiles(directory, "*", SearchOption.AllDirectories)
             .Where(f => !f.EndsWith("meta.json", StringComparison.OrdinalIgnoreCase))
-            .Where(f => !Path.GetFileName(f).Equals("Thumbs.db", StringComparison.OrdinalIgnoreCase)) // 除外
-            .Where(f => !Path.GetFileName(f).Equals(".DS_Store", StringComparison.OrdinalIgnoreCase)) // 除外
+            .Where(f => !Path.GetFileName(f).Equals("Thumbs.db", StringComparison.OrdinalIgnoreCase))
+            .Where(f => !Path.GetFileName(f).Equals(".DS_Store", StringComparison.OrdinalIgnoreCase))
             .OrderBy(f => f, StringComparer.Ordinal);
 
         var buffer = new byte[81920];
