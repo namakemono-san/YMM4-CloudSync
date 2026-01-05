@@ -25,7 +25,7 @@ public sealed class ProgressStreamContent(
             sent += read;
 
             if (total > 0)
-                progress?.Report((double)sent / total);
+                progress?.Report((double)sent / total * 100);
         }
     }
 
@@ -34,4 +34,4 @@ public sealed class ProgressStreamContent(
         length = total;
         return true;
     }
-}
+}
