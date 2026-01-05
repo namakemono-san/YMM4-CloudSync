@@ -238,7 +238,7 @@ public partial class ToolView
 
             if (result.Success)
             {
-                var ymmPath = FindYmmPath();
+                var ymmPath = YmmPathFinder.Find();
                 if (ymmPath != null)
                 {
                     Process.Start(new ProcessStartInfo
@@ -441,19 +441,5 @@ public partial class ToolView
 
         UploadButton.IsEnabled = !isProcessing && IsConnected;
         RefreshButton.IsEnabled = !isProcessing && IsConnected;
-    }
-
-    static string? FindYmmPath()
-    {
-        var processes = Process.GetProcessesByName("YukkuriMovieMaker");
-        if (processes.Length > 0)
-            return processes[0].MainModule?.FileName;
-
-        var defaultPath = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.Desktop),
-            "YukkuriMovieMaker_v4",
-            "YukkuriMovieMaker.exe");
-
-        return File.Exists(defaultPath) ? defaultPath : null;
     }
 }

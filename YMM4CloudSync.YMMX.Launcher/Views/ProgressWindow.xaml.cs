@@ -1,6 +1,7 @@
 ﻿using System.IO;
 using System.Windows;
 using YMM4CloudSync.YMMX.Core;
+using YMM4CloudSync.YMMX.Core.Commons;
 using YMM4CloudSync.YMMX.Core.Models;
 
 namespace YMM4CloudSync.YMMX.Launcher.Views;
@@ -92,7 +93,7 @@ public partial class ProgressWindow : Window
 
     private void LaunchYmm(string ymmpPath)
     {
-        var ymmPath = Program.FindYmmPath();
+        var ymmPath = YmmPathFinder.Find();
 
         if (ymmPath == null)
         {
