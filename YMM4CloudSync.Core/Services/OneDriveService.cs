@@ -1,7 +1,9 @@
 ﻿using System.IO;
 using System.Net.Http;
+using System.Security.Cryptography;
 using Microsoft.Identity.Client;
 using System.Net.Http.Headers;
+using System.Text;
 using System.Text.Json;
 using YMM4CloudSync.Core.Commons;
 
@@ -96,7 +98,7 @@ public sealed class OneDriveService : ICloudStorageService, IDisposable
             : $"{GraphBase}/me/drive/items/{folderId}/children?$orderby=lastModifiedDateTime desc";
 
         using var resp = await SendAsync(HttpMethod.Get, url, null);
-        await EnsureSuccessOrThrowAsync(resp, "ファイル一覧の取得");
+        await EnsureSuccessOrThrowAsync(resp);
 
         await using var s = await resp.Content.ReadAsStreamAsync();
         var doc = await JsonDocument.ParseAsync(s);
@@ -129,19 +131,98 @@ public sealed class OneDriveService : ICloudStorageService, IDisposable
         if (!File.Exists(localPath))
             throw new FileNotFoundException("ファイルが見つかりません。", localPath);
 
+        var fileInfo = new FileInfo(localPath);
+        const long chunkThreshold = 4 * 1024 * 1024;
+
+        if (fileInfo.Length > chunkThreshold)
+        {
+            return await UploadLargeFileAsync(localPath, remotePath, progress);
+        }
+
+        return await RetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            await using var fs = new FileStream(localPath, FileMode.Open, FileAccess.Read, FileShare.Read);
+            var url = $"{GraphBase}/me/drive/special/approot:/{EscapePath(remotePath)}:/content";
+
+            using var content = new ProgressStreamContent(fs, fs.Length, progress);
+            content.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
+
+            using var resp = await SendAsync(HttpMethod.Put, url, content);
+            await EnsureSuccessOrThrowAsync(resp);
+
+            await using var s = await resp.Content.ReadAsStreamAsync();
+            var doc = await JsonDocument.ParseAsync(s);
+
+            return doc.RootElement.GetProperty("id").GetString() ?? "";
+        });
+    }
+
+    private async Task<string> UploadLargeFileAsync(string localPath, string remotePath, IProgress<double>? progress)
+    {
+        var sessionUrl = await CreateUploadSessionAsync(remotePath);
+        
         await using var fs = new FileStream(localPath, FileMode.Open, FileAccess.Read, FileShare.Read);
-        var url = $"{GraphBase}/me/drive/special/approot:/{EscapePath(remotePath)}:/content";
+        var totalSize = fs.Length;
+        const int chunkSize = 10 * 320 * 1024;
 
-        using var content = new ProgressStreamContent(fs, fs.Length, progress);
-        content.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
+        var buffer = new byte[chunkSize];
+        long uploaded = 0;
+        string? fileId = null;
 
-        using var resp = await SendAsync(HttpMethod.Put, url, content);
-        await EnsureSuccessOrThrowAsync(resp, "アップロード");
+        while (uploaded < totalSize)
+        {
+            var bytesToRead = (int)Math.Min(chunkSize, totalSize - uploaded);
+            var bytesRead = await fs.ReadAsync(buffer.AsMemory(0, bytesToRead));
+            
+            if (bytesRead == 0) break;
 
+            var rangeStart = uploaded;
+            var rangeEnd = uploaded + bytesRead - 1;
+
+            fileId = await RetryHelper.ExecuteWithRetryAsync(async () =>
+            {
+                using var content = new ByteArrayContent(buffer, 0, bytesRead);
+                content.Headers.Add("Content-Range", $"bytes {rangeStart}-{rangeEnd}/{totalSize}");
+                content.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
+
+                using var req = new HttpRequestMessage(HttpMethod.Put, sessionUrl);
+                req.Content = content;
+                using var resp = await _http.SendAsync(req);
+
+                if (!resp.IsSuccessStatusCode && resp.StatusCode != System.Net.HttpStatusCode.Accepted)
+                {
+                    await EnsureSuccessOrThrowAsync(resp);
+                }
+
+                await using var s = await resp.Content.ReadAsStreamAsync();
+                var doc = await JsonDocument.ParseAsync(s);
+
+                return doc.RootElement.TryGetProperty("id", out var idProp) ? idProp.GetString() : null;
+            });
+
+            uploaded += bytesRead;
+            progress?.Report(uploaded * 100.0 / totalSize);
+        }
+
+        return fileId ?? throw new InvalidOperationException("アップロードが完了しましたが、ファイルIDを取得できませんでした。");
+    }
+
+    private async Task<string> CreateUploadSessionAsync(string remotePath)
+    {
+        var url = $"{GraphBase}/me/drive/special/approot:/{EscapePath(remotePath)}:/createUploadSession";
+        
+        var body = new { item = new { name = Path.GetFileName(remotePath) } };
+        var json = JsonSerializer.Serialize(body);
+        using var content = new StringContent(json, Encoding.UTF8, "application/json");
+        
+        using var resp = await SendAsync(HttpMethod.Post, url, content);
+        await EnsureSuccessOrThrowAsync(resp);
+        
         await using var s = await resp.Content.ReadAsStreamAsync();
         var doc = await JsonDocument.ParseAsync(s);
-
-        return doc.RootElement.GetProperty("id").GetString() ?? "";
+        
+        return doc.RootElement.GetProperty("uploadUrl").GetString() 
+               ?? throw new InvalidOperationException("アップロードURLを取得できませんでした。");
     }
 
     public async Task DownloadFileAsync(string remoteFileId, string localPath, IProgress<double>? progress = null)
@@ -155,7 +236,7 @@ public sealed class OneDriveService : ICloudStorageService, IDisposable
             Directory.CreateDirectory(dir);
 
         using var resp = await SendAsync(HttpMethod.Get, url, null, HttpCompletionOption.ResponseHeadersRead);
-        await EnsureSuccessOrThrowAsync(resp, "ダウンロード");
+        await EnsureSuccessOrThrowAsync(resp);
 
         var total = resp.Content.Headers.ContentLength ?? 0;
 
@@ -170,7 +251,7 @@ public sealed class OneDriveService : ICloudStorageService, IDisposable
         EnsureAuthenticated();
 
         using var resp = await SendAsync(HttpMethod.Delete, $"{GraphBase}/me/drive/items/{fileId}", null);
-        await EnsureSuccessOrThrowAsync(resp, "削除");
+        await EnsureSuccessOrThrowAsync(resp);
     }
 
     private void EnsureClient()
@@ -217,7 +298,7 @@ public sealed class OneDriveService : ICloudStorageService, IDisposable
         return await _http.SendAsync(req, completion);
     }
 
-    private static async Task EnsureSuccessOrThrowAsync(HttpResponseMessage resp, string actionName)
+    private static async Task EnsureSuccessOrThrowAsync(HttpResponseMessage resp)
     {
         if (resp.IsSuccessStatusCode) return;
 
@@ -293,14 +374,18 @@ public sealed class OneDriveService : ICloudStorageService, IDisposable
 
         cache.SetBeforeAccess(args =>
         {
-            if (File.Exists(TokenCachePath))
-                args.TokenCache.DeserializeMsalV3(File.ReadAllBytes(TokenCachePath));
+            if (!File.Exists(TokenCachePath)) return;
+            var encryptedData = File.ReadAllBytes(TokenCachePath);
+            var decryptedData = ProtectedData.Unprotect(encryptedData, null, DataProtectionScope.CurrentUser);
+            args.TokenCache.DeserializeMsalV3(decryptedData);
         });
 
         cache.SetAfterAccess(args =>
         {
-            if (args.HasStateChanged)
-                File.WriteAllBytes(TokenCachePath, args.TokenCache.SerializeMsalV3());
+            if (!args.HasStateChanged) return;
+            var data = args.TokenCache.SerializeMsalV3();
+            var encryptedData = ProtectedData.Protect(data, null, DataProtectionScope.CurrentUser);
+            File.WriteAllBytes(TokenCachePath, encryptedData);
         });
     }
 }

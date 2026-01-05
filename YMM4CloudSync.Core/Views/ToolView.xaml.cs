@@ -247,8 +247,26 @@ public partial class ToolView
 
             var result = await Task.Run(() => YmmxExtractor.Extract(tempPath, outputDir));
 
+            if (result.HashMismatch)
+            {
+                MessageBox.Show(
+                    "ダウンロードしたファイルのハッシュ値が一致しません。\nファイルが破損している可能性があります。\n\n問題がある場合は再度ダウンロードしてください。",
+                    "警告",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+            }
+
             if (result.Success)
             {
+                if (!string.IsNullOrEmpty(result.BackupDirectory))
+                {
+                    MessageBox.Show(
+                        $"既存のプロジェクトをバックアップしました。\n{result.BackupDirectory}",
+                        "バックアップ",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Information);
+                }
+
                 var ymmPath = YmmPathFinder.Find();
                 if (ymmPath != null)
                 {

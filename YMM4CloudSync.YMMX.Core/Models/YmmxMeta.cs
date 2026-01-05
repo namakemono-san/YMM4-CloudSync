@@ -27,6 +27,9 @@ public class YmmxMeta
     [JsonPropertyName("min_plugin_version")]
     public required string MinPluginVersion { get; init; }
 
+    [JsonPropertyName("hash")]
+    public string? Hash { get; init; }
+
     public static YmmxMeta? Load(string path)
     {
         var json = File.ReadAllText(path);

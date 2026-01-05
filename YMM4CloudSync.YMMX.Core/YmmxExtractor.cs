@@ -1,5 +1,7 @@
-﻿using System.IO;
+using System.IO;
 using System.IO.Compression;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using YMM4CloudSync.YMMX.Core.Models;
@@ -20,6 +22,8 @@ public class ExtractResult
     public string YmmpPath { get; init; } = string.Empty;
     public string ExtractedDirectory { get; init; } = string.Empty;
     public YmmxMeta? Meta { get; init; }
+    public bool HashMismatch { get; init; }
+    public string? BackupDirectory { get; init; }
 }
 
 public static class YmmxExtractor
@@ -32,7 +36,11 @@ public static class YmmxExtractor
         if (!File.Exists(ymmxPath))
             throw new FileNotFoundException("ymmx ファイルが見つかりません。", ymmxPath);
 
+        var newMeta = ReadMetaFromZip(ymmxPath);
+
         var finalOutputDir = outputDirectory;
+        string? backupDir = null;
+        
         if (Directory.Exists(outputDirectory))
         {
             var existingMetaPath = Path.Combine(outputDirectory, "meta.json");
@@ -40,8 +48,6 @@ public static class YmmxExtractor
 
             if (File.Exists(existingMetaPath))
                 existingMeta = YmmxMeta.Load(existingMetaPath);
-
-            var newMeta = ReadMetaFromZip(ymmxPath);
 
             if (conflictResolver != null)
             {
@@ -62,8 +68,13 @@ public static class YmmxExtractor
 
                     case ExtractConflictAction.Overwrite:
                     default:
+                        backupDir = CreateBackup(outputDirectory);
                         break;
                 }
+            }
+            else
+            {
+                backupDir = CreateBackup(outputDirectory);
             }
         }
 
@@ -76,6 +87,16 @@ public static class YmmxExtractor
         catch (IOException ex)
         {
             throw new InvalidOperationException($"展開に失敗しました: {ex.Message}", ex);
+        }
+
+        var hashMismatch = false;
+        if (newMeta?.Hash != null)
+        {
+            var actualHash = ComputeContentHash(finalOutputDir);
+            if (!string.Equals(newMeta.Hash, actualHash, StringComparison.OrdinalIgnoreCase))
+            {
+                hashMismatch = true;
+            }
         }
 
         var metaPath = Path.Combine(finalOutputDir, "meta.json");
@@ -114,7 +135,9 @@ public static class YmmxExtractor
             Success = true,
             YmmpPath = ymmpPath,
             ExtractedDirectory = finalOutputDir,
-            Meta = meta
+            Meta = meta,
+            HashMismatch = hashMismatch,
+            BackupDirectory = backupDir
         };
     }
 
@@ -140,21 +163,9 @@ public static class YmmxExtractor
 
     private static string SanitizeFileName(string name)
     {
-        foreach (var c in Path.GetInvalidFileNameChars())
-            name = name.Replace(c, '_');
+        name = Path.GetInvalidFileNameChars().Aggregate(name, (current, c) => current.Replace(c, '_'));
 
         return name.Trim();
-    }
-
-    private static string GetUniqueFilePath(string dir, string baseName, string ext)
-    {
-        var counter = 1;
-        while (true)
-        {
-            var candidate = Path.Combine(dir, $"{baseName}_{counter}{ext}");
-            if (!File.Exists(candidate)) return candidate;
-            counter++;
-        }
     }
 
     private static YmmxMeta? ReadMetaFromZip(string ymmxPath)
@@ -237,6 +248,46 @@ public static class YmmxExtractor
 
                 break;
             }
+        }
+    }
+
+    private static string ComputeContentHash(string directory)
+    {
+        using var sha256 = SHA256.Create();
+        
+        var files = Directory.GetFiles(directory, "*", SearchOption.AllDirectories)
+            .Where(f => !f.EndsWith("meta.json", StringComparison.OrdinalIgnoreCase))
+            .OrderBy(f => f, StringComparer.Ordinal);
+
+        foreach (var file in files)
+        {
+            var relativePath = Path.GetRelativePath(directory, file);
+            var pathBytes = Encoding.UTF8.GetBytes(relativePath);
+            sha256.TransformBlock(pathBytes, 0, pathBytes.Length, null, 0);
+
+            var fileBytes = File.ReadAllBytes(file);
+            sha256.TransformBlock(fileBytes, 0, fileBytes.Length, null, 0);
+        }
+
+        sha256.TransformFinalBlock([], 0, 0);
+        return Convert.ToHexString(sha256.Hash!).ToLowerInvariant();
+    }
+
+    private static string? CreateBackup(string directory)
+    {
+        if (!Directory.Exists(directory)) return null;
+
+        try
+        {
+            var timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+            var backupDir = $"{directory}_bak_{timestamp}";
+            
+            Directory.Move(directory, backupDir);
+            return backupDir;
+        }
+        catch
+        {
+            return null;
         }
     }
 }

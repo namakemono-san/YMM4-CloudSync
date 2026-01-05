@@ -1,5 +1,7 @@
-﻿using System.IO;
+using System.IO;
 using System.IO.Compression;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using YMM4CloudSync.YMMX.Core.Commons;
@@ -75,6 +77,8 @@ public static class YmmxPacker
             var ymmpOutputPath = Path.Combine(tempDir, "project.ymmp");
             File.WriteAllText(ymmpOutputPath, json.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
 
+            var contentHash = ComputeContentHash(tempDir);
+
             var meta = new YmmxMeta
             {
                 Id = Guid.NewGuid().ToString(),
@@ -83,7 +87,8 @@ public static class YmmxPacker
                 UpdatedAt = DateTime.UtcNow,
                 FormatVersion = 1,
                 PluginVersion = VersionChecker.CurrentVersion,
-                MinPluginVersion = VersionChecker.CurrentVersion
+                MinPluginVersion = VersionChecker.CurrentVersion,
+                Hash = contentHash
             };
             meta.Save(Path.Combine(tempDir, "meta.json"));
 
@@ -136,7 +141,7 @@ public static class YmmxPacker
                 string? folder = null;
                 if (obj.TryGetPropertyValue("$type", out var typeNode))
                 {
-                    var typeName = typeNode?.GetValue<string>()?.Split(',')[0];
+                    var typeName = typeNode?.GetValue<string>().Split(',')[0];
                     if (typeName != null && TypeToFolder.TryGetValue(typeName, out var f))
                     {
                         folder = f;
@@ -223,4 +228,26 @@ public static class YmmxPacker
 
         return candidate;
     }
-}
+
+    private static string ComputeContentHash(string directory)
+    {
+        using var sha256 = SHA256.Create();
+        
+        var files = Directory.GetFiles(directory, "*", SearchOption.AllDirectories)
+            .Where(f => !f.EndsWith("meta.json", StringComparison.OrdinalIgnoreCase))
+            .OrderBy(f => f, StringComparer.Ordinal);
+
+        foreach (var file in files)
+        {
+            var relativePath = Path.GetRelativePath(directory, file);
+            var pathBytes = Encoding.UTF8.GetBytes(relativePath);
+            sha256.TransformBlock(pathBytes, 0, pathBytes.Length, null, 0);
+
+            var fileBytes = File.ReadAllBytes(file);
+            sha256.TransformBlock(fileBytes, 0, fileBytes.Length, null, 0);
+        }
+
+        sha256.TransformFinalBlock([], 0, 0);
+        return Convert.ToHexString(sha256.Hash!).ToLowerInvariant();
+    }
+}
