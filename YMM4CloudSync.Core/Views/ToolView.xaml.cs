@@ -1,32 +1,36 @@
 ﻿using System.Collections.ObjectModel;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
-using System.Windows.Navigation;
 using Microsoft.Win32;
 using Reactive.Bindings;
 using YMM4CloudSync.Core.Commons;
 using YMM4CloudSync.Core.Commons.License;
 using YMM4CloudSync.Core.Services;
 using YMM4CloudSync.YMMX.Core;
+using YMM4CloudSync.YMMX.Core.Commons;
 
 namespace YMM4CloudSync.Core.Views;
 
+[SuppressMessage("ReSharper", "AsyncVoidMethod")]
 public partial class ToolView
 {
-    public ObservableCollection<LicenseTextViewModel> Licenses { get; } = new();
+    // ReSharper disable MemberCanBePrivate.Global
+    public ObservableCollection<LicenseTextViewModel> Licenses { get; } = [];
     public ReactiveProperty<LicenseTextViewModel?> CurrentLicense { get; } = new();
 
-    public ObservableCollection<CloudServiceItem> CloudServices { get; } = new();
+    public ObservableCollection<CloudServiceItem> CloudServices { get; } = [];
     public ReactiveProperty<CloudServiceItem?> SelectedCloudService { get; } = new();
+    // ReSharper restore MemberCanBePrivate.Global
 
-    bool _isProcessing;
+    private bool _isProcessing;
 
-    ICloudStorageService? CurrentService => SelectedCloudService.Value?.Service;
-    bool IsConnected => SelectedCloudService.Value?.IsConnected == true;
+    private ICloudStorageService? CurrentService => SelectedCloudService.Value?.Service;
+    private bool IsConnected => SelectedCloudService.Value?.IsConnected == true;
 
     public ToolView()
     {
@@ -39,7 +43,7 @@ public partial class ToolView
 
         SelectedCloudService.Value = CloudServices.FirstOrDefault();
 
-        SelectedCloudService.Subscribe(async _ =>
+        SelectedCloudService.Subscribe(async void (_) =>
         {
             CloudFilesList.ItemsSource = null;
 
@@ -52,7 +56,7 @@ public partial class ToolView
         });
     }
 
-    async void OnLoaded(object sender, RoutedEventArgs e)
+    private async void OnLoaded(object sender, RoutedEventArgs e)
     {
         LoadVersionInfo();
         LoadChangelog();
@@ -61,13 +65,13 @@ public partial class ToolView
         await TryAutoConnectAsync();
     }
 
-    void LoadVersionInfo()
+    private void LoadVersionInfo()
     {
         var version = Assembly.GetExecutingAssembly().GetName().Version;
         VersionText.Text = $"Version {version?.ToString(3) ?? "1.0.0"}";
     }
 
-    void LoadChangelog()
+    private void LoadChangelog()
     {
         try
         {
@@ -84,7 +88,7 @@ public partial class ToolView
         }
     }
 
-    void LoadLicense()
+    private void LoadLicense()
     {
         var licenses = LicenseLoader.Load()
             .Select(x => new LicenseTextViewModel(x))
@@ -98,7 +102,7 @@ public partial class ToolView
         CurrentLicense.Value = Licenses.FirstOrDefault();
     }
 
-    async Task TryAutoConnectAsync()
+    private async Task TryAutoConnectAsync()
     {
         foreach (var item in CloudServices)
         {
@@ -113,11 +117,15 @@ public partial class ToolView
             }
         }
 
+        var connected = IsConnected;
+        UploadButton.IsEnabled = connected;
+        RefreshButton.IsEnabled = connected;
+        
         if (IsConnected)
             await RefreshFileListAsync();
     }
 
-    async void OnServiceToggleClick(object sender, RoutedEventArgs e)
+    private async void OnServiceToggleClick(object sender, RoutedEventArgs e)
     {
         if (_isProcessing) return;
         if (sender is not Button b) return;
@@ -163,13 +171,13 @@ public partial class ToolView
         }
     }
 
-    async void OnRefreshClick(object sender, RoutedEventArgs e)
+    private async void OnRefreshClick(object sender, RoutedEventArgs e)
     {
         if (_isProcessing || !IsConnected) return;
         await RefreshFileListAsync();
     }
 
-    async Task RefreshFileListAsync()
+    private async Task RefreshFileListAsync()
     {
         var svc = CurrentService;
         if (svc == null || !IsConnected) return;
@@ -187,26 +195,29 @@ public partial class ToolView
         }
     }
 
-    void OnListDoubleClick(object sender, MouseButtonEventArgs e)
+    private void OnListDoubleClick(object sender, MouseButtonEventArgs e)
     {
         if (CloudFilesList.SelectedItem is CloudFile f)
             _ = OpenProjectAsync(f);
     }
 
-    CloudFile? GetCloudFileFromSender(object sender)
+    private CloudFile? GetCloudFileFromSender(object sender)
     {
-        if (sender is Button button && button.Tag is CloudFile file) return file;
-        if (sender is MenuItem) return CloudFilesList.SelectedItem as CloudFile;
-        return null;
+        return sender switch
+        {
+            Button { Tag: CloudFile file } => file,
+            MenuItem => CloudFilesList.SelectedItem as CloudFile,
+            _ => null
+        };
     }
 
-    async void OnOpenClick(object sender, RoutedEventArgs e)
+    private async void OnOpenClick(object sender, RoutedEventArgs e)
     {
         var file = GetCloudFileFromSender(sender);
         if (file != null) await OpenProjectAsync(file);
     }
 
-    async Task OpenProjectAsync(CloudFile file)
+    private async Task OpenProjectAsync(CloudFile file)
     {
         var svc = CurrentService;
         if (_isProcessing || svc == null || !IsConnected) return;
@@ -255,7 +266,14 @@ public partial class ToolView
                 }
             }
 
-            try { File.Delete(tempPath); } catch { }
+            try
+            {
+                File.Delete(tempPath);
+            }
+            catch
+            {
+                // ignored
+            }
         }
         catch (Exception ex)
         {
@@ -269,7 +287,7 @@ public partial class ToolView
         }
     }
 
-    async void OnDownloadClick(object sender, RoutedEventArgs e)
+    private async void OnDownloadClick(object sender, RoutedEventArgs e)
     {
         var svc = CurrentService;
         var file = GetCloudFileFromSender(sender);
@@ -320,7 +338,7 @@ public partial class ToolView
         }
     }
 
-    async void OnDeleteClick(object sender, RoutedEventArgs e)
+    private async void OnDeleteClick(object sender, RoutedEventArgs e)
     {
         var svc = CurrentService;
         var file = GetCloudFileFromSender(sender);
@@ -362,7 +380,7 @@ public partial class ToolView
         }
     }
 
-    async void OnUploadClick(object sender, RoutedEventArgs e)
+    private async void OnUploadClick(object sender, RoutedEventArgs e)
     {
         var svc = CurrentService;
         if (_isProcessing || svc == null || !IsConnected) return;
@@ -410,7 +428,14 @@ public partial class ToolView
 
             await svc.UploadFileAsync(tempYmmxPath, $"{projectName}.ymmx", progress);
 
-            try { File.Delete(tempYmmxPath); } catch { }
+            try
+            {
+                File.Delete(tempYmmxPath);
+            }
+            catch
+            {
+                // ignored
+            }
 
             await RefreshFileListAsync();
 
@@ -433,7 +458,7 @@ public partial class ToolView
         }
     }
 
-    void SetProcessingState(bool isProcessing, string? message = null)
+    private void SetProcessingState(bool isProcessing, string? message = null)
     {
         ProgressPanel.Visibility = isProcessing ? Visibility.Visible : Visibility.Collapsed;
         ProgressText.Text = message ?? "処理中...";
