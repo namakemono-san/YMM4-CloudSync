@@ -119,34 +119,66 @@ public class GoogleDriveService : ICloudStorageService
         if (!File.Exists(localPath))
             throw new FileNotFoundException("アップロードするファイルが見つかりません。", localPath);
 
-        var fileMetadata = new Google.Apis.Drive.v3.Data.File
-        {
-            Name = remoteName,
-            Parents = _appFolderId != null ? new List<string> { _appFolderId } : null
-        };
+        var existingFileId = await FindFileByNameAsync(remoteName);
 
         await using var stream = new FileStream(localPath, FileMode.Open, FileAccess.Read);
         var totalSize = stream.Length;
 
-        var request = _driveService.Files.Create(fileMetadata, stream, "application/octet-stream");
-        request.Fields = "id, name, size, modifiedTime";
+        Google.Apis.Upload.IUploadProgress result;
+        string fileId;
 
-        request.ProgressChanged += p =>
+        if (existingFileId != null)
         {
-            if (totalSize > 0)
+            var updateMetadata = new Google.Apis.Drive.v3.Data.File { Name = remoteName };
+            var updateRequest = _driveService.Files.Update(updateMetadata, existingFileId, stream, "application/octet-stream");
+            updateRequest.Fields = "id, name, size, modifiedTime";
+
+            updateRequest.ProgressChanged += p =>
             {
-                progress?.Report((double)p.BytesSent / totalSize * 100);
-            }
-        };
+                if (totalSize > 0)
+                    progress?.Report((double)p.BytesSent / totalSize * 100);
+            };
 
-        var result = await request.UploadAsync();
-
-        if (result.Status != Google.Apis.Upload.UploadStatus.Completed)
+            result = await updateRequest.UploadAsync();
+            fileId = updateRequest.ResponseBody?.Id ?? existingFileId;
+        }
+        else
         {
-            throw new Exception($"アップロードに失敗しました: {result.Exception?.Message}");
+            var fileMetadata = new Google.Apis.Drive.v3.Data.File
+            {
+                Name = remoteName,
+                Parents = _appFolderId != null ? [_appFolderId] : null
+            };
+
+            var createRequest = _driveService.Files.Create(fileMetadata, stream, "application/octet-stream");
+            createRequest.Fields = "id, name, size, modifiedTime";
+
+            createRequest.ProgressChanged += p =>
+            {
+                if (totalSize > 0)
+                    progress?.Report((double)p.BytesSent / totalSize * 100);
+            };
+
+            result = await createRequest.UploadAsync();
+            fileId = createRequest.ResponseBody?.Id ?? throw new Exception("アップロード後のファイルIDを取得できませんでした。");
         }
 
-        return request.ResponseBody.Id;
+        if (result.Status != Google.Apis.Upload.UploadStatus.Completed)
+            throw new Exception($"アップロードに失敗しました: {result.Exception?.Message}");
+
+        return fileId;
+    }
+
+    private async Task<string?> FindFileByNameAsync(string fileName)
+    {
+        if (_driveService == null || _appFolderId == null) return null;
+
+        var listRequest = _driveService.Files.List();
+        listRequest.Q = $"name = '{fileName.Replace("'", "\\'")}' and '{_appFolderId}' in parents and trashed = false";
+        listRequest.Fields = "files(id)";
+
+        var result = await listRequest.ExecuteAsync();
+        return result.Files.FirstOrDefault()?.Id;
     }
 
     public async Task DownloadFileAsync(string remoteFileId, string localPath, IProgress<double>? progress = null)
@@ -246,4 +278,4 @@ public class GoogleDriveService : ICloudStorageService
         var folder = await createRequest.ExecuteAsync();
         return folder.Id;
     }
-}
+}
