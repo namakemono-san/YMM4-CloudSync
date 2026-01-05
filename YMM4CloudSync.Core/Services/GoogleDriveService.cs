@@ -57,16 +57,6 @@ public class GoogleDriveService : ICloudStorageService
         }
         catch (OperationCanceledException)
         {
-            try
-            {
-                if (Directory.Exists(CredentialPath))
-                    Directory.Delete(CredentialPath, true);
-            }
-            catch
-            {
-                // ignored
-            }
-
             _driveService?.Dispose();
             _driveService = null;
             _appFolderId = null;
@@ -202,18 +192,45 @@ public class GoogleDriveService : ICloudStorageService
         {
             Directory.CreateDirectory(directory);
         }
-
-        await using var stream = new FileStream(localPath, FileMode.Create, FileAccess.Write);
-
-        request.MediaDownloader.ProgressChanged += p =>
+        
+        var tempPath = localPath + ".tmp";
+        
+        try
         {
-            if (totalSize > 0)
+            await using (var stream = new FileStream(tempPath, FileMode.Create, FileAccess.Write))
             {
-                progress?.Report((double)p.BytesDownloaded / totalSize * 100);
-            }
-        };
+                request.MediaDownloader.ProgressChanged += p =>
+                {
+                    if (totalSize > 0)
+                    {
+                        progress?.Report((double)p.BytesDownloaded / totalSize * 100);
+                    }
+                };
 
-        await request.DownloadAsync(stream);
+                await request.DownloadAsync(stream);
+            }
+
+            if (File.Exists(localPath))
+            {
+                File.Delete(localPath);
+            }
+            File.Move(tempPath, localPath);
+        }
+        catch
+        {
+            if (!File.Exists(tempPath)) throw;
+            
+            try
+            {
+                File.Delete(tempPath);
+            }
+            catch
+            {
+                // ignored
+            }
+
+            throw;
+        }
     }
 
     public async Task<List<CloudFile>> ListFilesAsync(string? folderId = null)

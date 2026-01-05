@@ -235,15 +235,40 @@ public sealed class OneDriveService : ICloudStorageService, IDisposable
         if (!string.IsNullOrEmpty(dir))
             Directory.CreateDirectory(dir);
 
-        using var resp = await SendAsync(HttpMethod.Get, url, null, HttpCompletionOption.ResponseHeadersRead);
-        await EnsureSuccessOrThrowAsync(resp);
+        var tempPath = localPath + ".tmp";
 
-        var total = resp.Content.Headers.ContentLength ?? 0;
+        try
+        {
+            using var resp = await SendAsync(HttpMethod.Get, url, null, HttpCompletionOption.ResponseHeadersRead);
+            await EnsureSuccessOrThrowAsync(resp);
 
-        await using var input = await resp.Content.ReadAsStreamAsync();
-        await using var output = new FileStream(localPath, FileMode.Create, FileAccess.Write, FileShare.None);
+            var total = resp.Content.Headers.ContentLength ?? 0;
 
-        await CopyWithProgressAsync(input, output, total, progress);
+            await using var input = await resp.Content.ReadAsStreamAsync();
+            await using (var output = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None))
+            {
+                await CopyWithProgressAsync(input, output, total, progress);
+            }
+
+            if (File.Exists(localPath))
+            {
+                File.Delete(localPath);
+            }
+            File.Move(tempPath, localPath);
+        }
+        catch
+        {
+            if (!File.Exists(tempPath)) throw;
+            try
+            {
+                File.Delete(tempPath);
+            }
+            catch
+            {
+                // ignored
+            }
+            throw;
+        }
     }
 
     public async Task DeleteFileAsync(string fileId)
