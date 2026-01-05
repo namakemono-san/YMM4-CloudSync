@@ -41,16 +41,10 @@ public static class YmmHelper
         {
             var dataContext = GetMainWindowDataContext();
             if (dataContext == null)
-            {
-                Console.WriteLine("[YMM4CloudSync] dataContext is null");
                 return false;
-            }
 
             var vmType = dataContext.GetType();
-            Console.WriteLine($"[YMM4CloudSync] vmType: {vmType.FullName}");
-
             var currentPath = path ?? GetCurrentProjectPath();
-            Console.WriteLine($"[YMM4CloudSync] currentPath: {currentPath}");
 
             if (string.IsNullOrEmpty(currentPath))
             {
@@ -62,33 +56,20 @@ public static class YmmHelper
                 };
 
                 if (saveDialog.ShowDialog() != true)
-                {
-                    Console.WriteLine("[YMM4CloudSync] SaveDialog cancelled");
                     return false;
-                }
+
                 currentPath = saveDialog.FileName;
             }
 
             var saveMethod = vmType.GetMethod("SaveProject", BindingFlags.Public | BindingFlags.Instance);
             if (saveMethod == null)
-            {
-                Console.WriteLine("[YMM4CloudSync] SaveProject method not found");
-                Console.WriteLine($"[YMM4CloudSync] Available methods:");
-                foreach (var m in vmType.GetMethods(BindingFlags.Public | BindingFlags.Instance))
-                {
-                    Console.WriteLine($"  - {m.Name}");
-                }
                 return false;
-            }
 
-            Console.WriteLine($"[YMM4CloudSync] Invoking SaveProject with path: {currentPath}");
             saveMethod.Invoke(dataContext, [currentPath]);
-            Console.WriteLine("[YMM4CloudSync] SaveProject succeeded");
             return true;
         }
-        catch (Exception ex)
+        catch
         {
-            Console.WriteLine($"[YMM4CloudSync] Save error: {ex}");
             return false;
         }
     }
@@ -110,4 +91,4 @@ public static class YmmHelper
         if (innerValue is T typedValue) return typedValue;
         return innerValue != null ? ExtractValue<T>(innerValue) : default;
     }
-}
+}
