@@ -22,4 +22,4 @@ public sealed class CloudServiceItem(ICloudStorageService service) : INotifyProp
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
-}
+}

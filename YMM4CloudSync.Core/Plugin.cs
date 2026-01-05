@@ -40,4 +40,4 @@ public class Plugin : IPlugin, IToolPlugin
         _ymmxFileExtension.Register();
         MessageBox.Show("関連付けが完了しました。", "YMM4 CloudSync", MessageBoxButton.OK, MessageBoxImage.Information);
     }
-}
+}

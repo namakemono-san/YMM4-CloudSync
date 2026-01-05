@@ -61,4 +61,4 @@ public class YmmxFileExtension(string launcherPath, string iconPath)
     }
 
     private string GetCommand() => $"\"{launcherPath}\" \"%1\"";
-}
+}

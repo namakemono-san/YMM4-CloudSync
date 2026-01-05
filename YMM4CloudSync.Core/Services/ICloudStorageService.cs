@@ -20,4 +20,4 @@ public record CloudFile(
     string MimeType,
     long? Size,
     DateTime? ModifiedTime
-);
+);

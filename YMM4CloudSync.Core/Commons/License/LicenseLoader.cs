@@ -35,4 +35,4 @@ public static class LicenseLoader
 
         return result;
     }
-}
+}
