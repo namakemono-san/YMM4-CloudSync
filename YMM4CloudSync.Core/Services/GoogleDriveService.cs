@@ -43,7 +43,7 @@ public class GoogleDriveService : ICloudStorageService
                 Scopes,
                 "user",
                 cts.Token,
-                new FileDataStore(CredentialPath, true));
+                new EncryptedFileDataStore(CredentialPath));
 
             _driveService = new DriveService(new BaseClientService.Initializer
             {

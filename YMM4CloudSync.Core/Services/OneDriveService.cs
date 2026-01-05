@@ -85,8 +85,7 @@ public sealed class OneDriveService : ICloudStorageService, IDisposable
 
         _account = null;
 
-        if (File.Exists(TokenCachePath))
-            File.Delete(TokenCachePath);
+        SecureStorageHelper.Delete(TokenCachePath);
     }
 
     public async Task<List<CloudFile>> ListFilesAsync(string? folderId = null)
@@ -395,22 +394,21 @@ public sealed class OneDriveService : ICloudStorageService, IDisposable
 
     private static void RegisterTokenCache(ITokenCache cache)
     {
-        Directory.CreateDirectory(Path.GetDirectoryName(TokenCachePath)!);
-
         cache.SetBeforeAccess(args =>
         {
-            if (!File.Exists(TokenCachePath)) return;
-            var encryptedData = File.ReadAllBytes(TokenCachePath);
-            var decryptedData = ProtectedData.Unprotect(encryptedData, null, DataProtectionScope.CurrentUser);
-            args.TokenCache.DeserializeMsalV3(decryptedData);
+            var data = SecureStorageHelper.Load(TokenCachePath);
+            if (data != null)
+            {
+                args.TokenCache.DeserializeMsalV3(data);
+            }
         });
 
         cache.SetAfterAccess(args =>
         {
             if (!args.HasStateChanged) return;
+            
             var data = args.TokenCache.SerializeMsalV3();
-            var encryptedData = ProtectedData.Protect(data, null, DataProtectionScope.CurrentUser);
-            File.WriteAllBytes(TokenCachePath, encryptedData);
+            SecureStorageHelper.Save(TokenCachePath, data);
         });
     }
 }
