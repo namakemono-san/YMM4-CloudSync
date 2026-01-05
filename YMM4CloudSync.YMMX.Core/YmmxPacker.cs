@@ -26,7 +26,7 @@ public static class YmmxPacker
         { "YukkuriMovieMaker.Project.Items.AudioItem", "audio" },
     };
 
-    public static PackResult Pack(string ymmpPath, string outputYmmxPath, string projectName)
+    public static PackResult Pack(string ymmpPath, string outputYmmxPath, string projectName, IProgress<double>? progress = null)
     {
         if (!File.Exists(ymmpPath))
         {
@@ -77,7 +77,11 @@ public static class YmmxPacker
             var ymmpOutputPath = Path.Combine(tempDir, "project.ymmp");
             File.WriteAllText(ymmpOutputPath, json.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
 
-            var contentHash = ComputeContentHash(tempDir);
+            var allFiles = Directory.GetFiles(tempDir, "*", SearchOption.AllDirectories);
+            var totalBytes = allFiles.Sum(f => new FileInfo(f).Length) * 2;
+            long processedBytes = 0;
+            
+            var contentHash = ComputeContentHash(tempDir, progress, totalBytes, ref processedBytes);
 
             var meta = new YmmxMeta
             {
@@ -97,7 +101,7 @@ public static class YmmxPacker
                 File.Delete(outputYmmxPath);
             }
             
-            ZipFile.CreateFromDirectory(tempDir, outputYmmxPath);
+            CreateZipWithProgress(tempDir, outputYmmxPath, progress, totalBytes, ref processedBytes);
 
             return new PackResult
             {
@@ -115,14 +119,7 @@ public static class YmmxPacker
         {
             if (Directory.Exists(tempDir))
             {
-                try
-                {
-                    Directory.Delete(tempDir, true);
-                }
-                catch
-                {
-                    // ignored
-                }
+                try { Directory.Delete(tempDir, true); } catch { /* ignored */ }
             }
         }
     }
@@ -238,25 +235,72 @@ public static class YmmxPacker
         return candidate;
     }
 
-    private static string ComputeContentHash(string directory)
+    private static string ComputeContentHash(string directory, IProgress<double>? progress, long totalJobBytes, ref long processedBytes)
     {
         using var sha256 = SHA256.Create();
         
         var files = Directory.GetFiles(directory, "*", SearchOption.AllDirectories)
             .Where(f => !f.EndsWith("meta.json", StringComparison.OrdinalIgnoreCase))
+            .Where(f => !Path.GetFileName(f).Equals("Thumbs.db", StringComparison.OrdinalIgnoreCase))
+            .Where(f => !Path.GetFileName(f).Equals(".DS_Store", StringComparison.OrdinalIgnoreCase))
             .OrderBy(f => f, StringComparer.Ordinal);
+
+        var buffer = new byte[81920];
 
         foreach (var file in files)
         {
-            var relativePath = Path.GetRelativePath(directory, file);
+            var relativePath = Path.GetRelativePath(directory, file).Replace('\\', '/');
             var pathBytes = Encoding.UTF8.GetBytes(relativePath);
             sha256.TransformBlock(pathBytes, 0, pathBytes.Length, null, 0);
 
-            var fileBytes = File.ReadAllBytes(file);
-            sha256.TransformBlock(fileBytes, 0, fileBytes.Length, null, 0);
+            using var stream = new FileStream(file, FileMode.Open, FileAccess.Read);
+            int bytesRead;
+            while ((bytesRead = stream.Read(buffer, 0, buffer.Length)) > 0)
+            {
+                sha256.TransformBlock(buffer, 0, bytesRead, null, 0);
+
+                if (progress == null || totalJobBytes <= 0) continue;
+                
+                processedBytes += bytesRead;
+                progress.Report((double)processedBytes / totalJobBytes * 100);
+            }
         }
 
         sha256.TransformFinalBlock([], 0, 0);
         return Convert.ToHexString(sha256.Hash!).ToLowerInvariant();
+    }
+    
+    private static void CreateZipWithProgress(string sourceDir, string outputZipPath, IProgress<double>? progress, long totalJobBytes, ref long processedBytes)
+    {
+        sourceDir = Path.GetFullPath(sourceDir);
+
+        if (!sourceDir.EndsWith(Path.DirectorySeparatorChar.ToString()))
+            sourceDir += Path.DirectorySeparatorChar;
+
+        using var zipToOpen = new FileStream(outputZipPath, FileMode.Create);
+        using var archive = new ZipArchive(zipToOpen, ZipArchiveMode.Create);
+        
+        var files = Directory.GetFiles(sourceDir, "*", SearchOption.AllDirectories);
+        var buffer = new byte[81920];
+
+        foreach (var file in files)
+        {
+            var relativePath = file[sourceDir.Length..].Replace('\\', '/');
+            var entry = archive.CreateEntry(relativePath, CompressionLevel.Optimal);
+
+            using var sourceStream = new FileStream(file, FileMode.Open, FileAccess.Read);
+            using var entryStream = entry.Open();
+            
+            int bytesRead;
+            while ((bytesRead = sourceStream.Read(buffer, 0, buffer.Length)) > 0)
+            {
+                entryStream.Write(buffer, 0, bytesRead);
+
+                if (progress == null || totalJobBytes <= 0) continue;
+                
+                processedBytes += bytesRead;
+                progress.Report((double)processedBytes / totalJobBytes * 100);
+            }
+        }
     }
 }

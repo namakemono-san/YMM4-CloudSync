@@ -98,13 +98,18 @@ public static class YmmxExtractor
             throw new InvalidOperationException($"展開に失敗しました: {ex.Message}", ex);
         }
 
-        var hashMismatch = false;
-        if (newMeta?.Hash != null)
+        var hashMismatch = false;if (newMeta?.Hash != null)
         {
             var actualHash = ComputeContentHash(finalOutputDir);
+        
             if (!string.Equals(newMeta.Hash, actualHash, StringComparison.OrdinalIgnoreCase))
             {
-                hashMismatch = true;
+                var legacyHash = ComputeLegacyContentHashSafely(finalOutputDir);
+            
+                if (!string.Equals(newMeta.Hash, legacyHash, StringComparison.OrdinalIgnoreCase))
+                {
+                    hashMismatch = true;
+                }
             }
         }
 
@@ -251,7 +256,39 @@ public static class YmmxExtractor
         
         var files = Directory.GetFiles(directory, "*", SearchOption.AllDirectories)
             .Where(f => !f.EndsWith("meta.json", StringComparison.OrdinalIgnoreCase))
+            .Where(f => !Path.GetFileName(f).Equals("Thumbs.db", StringComparison.OrdinalIgnoreCase)) // 除外
+            .Where(f => !Path.GetFileName(f).Equals(".DS_Store", StringComparison.OrdinalIgnoreCase)) // 除外
             .OrderBy(f => f, StringComparer.Ordinal);
+
+        var buffer = new byte[81920];
+        
+        foreach (var file in files)
+        {
+            var relativePath = Path.GetRelativePath(directory, file).Replace('\\', '/');
+            var pathBytes = Encoding.UTF8.GetBytes(relativePath);
+            sha256.TransformBlock(pathBytes, 0, pathBytes.Length, null, 0);
+
+            using var stream = new FileStream(file, FileMode.Open, FileAccess.Read);
+            int bytesRead;
+            while ((bytesRead = stream.Read(buffer, 0, buffer.Length)) > 0)
+            {
+                sha256.TransformBlock(buffer, 0, bytesRead, null, 0);
+            }
+        }
+
+        sha256.TransformFinalBlock([], 0, 0);
+        return Convert.ToHexString(sha256.Hash!).ToLowerInvariant();
+    }
+
+    private static string ComputeLegacyContentHashSafely(string directory)
+    {
+        using var sha256 = SHA256.Create();
+        
+        var files = Directory.GetFiles(directory, "*", SearchOption.AllDirectories)
+            .Where(f => !f.EndsWith("meta.json", StringComparison.OrdinalIgnoreCase))
+            .OrderBy(f => f, StringComparer.Ordinal);
+
+        var buffer = new byte[81920];
 
         foreach (var file in files)
         {
@@ -259,14 +296,18 @@ public static class YmmxExtractor
             var pathBytes = Encoding.UTF8.GetBytes(relativePath);
             sha256.TransformBlock(pathBytes, 0, pathBytes.Length, null, 0);
 
-            var fileBytes = File.ReadAllBytes(file);
-            sha256.TransformBlock(fileBytes, 0, fileBytes.Length, null, 0);
+            using var stream = new FileStream(file, FileMode.Open, FileAccess.Read);
+            int bytesRead;
+            while ((bytesRead = stream.Read(buffer, 0, buffer.Length)) > 0)
+            {
+                sha256.TransformBlock(buffer, 0, bytesRead, null, 0);
+            }
         }
 
         sha256.TransformFinalBlock([], 0, 0);
         return Convert.ToHexString(sha256.Hash!).ToLowerInvariant();
     }
-
+    
     private static string? CreateBackup(string directory)
     {
         if (!Directory.Exists(directory)) return null;
