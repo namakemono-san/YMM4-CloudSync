@@ -17,6 +17,7 @@ public partial class ProgressWindow : Window
         Loaded += OnLoaded;
     }
 
+    // ReSharper disable once AsyncVoidMethod
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
         StatusText.Text = $"展開中: {Path.GetFileName(_ymmxPath)}";
@@ -29,7 +30,7 @@ public partial class ProgressWindow : Window
             var result = await Task.Run(() => YmmxExtractor.Extract(
                 _ymmxPath, 
                 outputDir,
-                ConflictResolver));
+                (existing, incoming) => Dispatcher.Invoke(() => ConflictResolver(existing, incoming))));
 
             if (!result.Success)
             {
