@@ -7,7 +7,7 @@ using YMM4CloudSync.Core.Commons;
 
 namespace YMM4CloudSync.Core.Services;
 
-public sealed class OneDriveService : ICloudStorageService
+public sealed class OneDriveService : ICloudStorageService, IDisposable
 {
     public string ServiceName => "OneDrive";
     public bool IsAuthenticated => _pca != null && _account != null;
@@ -22,6 +22,14 @@ public sealed class OneDriveService : ICloudStorageService
     private IPublicClientApplication? _pca;
     private IAccount? _account;
     private readonly HttpClient _http = new();
+    private bool _disposed;
+
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _http.Dispose();
+        _disposed = true;
+    }
 
     public async Task<bool> AuthenticateAsync()
     {
