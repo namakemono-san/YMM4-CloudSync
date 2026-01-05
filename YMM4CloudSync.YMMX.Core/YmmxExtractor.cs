@@ -38,6 +38,15 @@ public static class YmmxExtractor
 
         var newMeta = ReadMetaFromZip(ymmxPath);
 
+        if (newMeta != null)
+        {
+            var versionError = VersionChecker.Validate(newMeta);
+            if (versionError != null)
+            {
+                throw new InvalidOperationException(versionError);
+            }
+        }
+        
         var finalOutputDir = outputDirectory;
         string? backupDir = null;
         
@@ -107,21 +116,6 @@ public static class YmmxExtractor
 
         var meta = YmmxMeta.Load(metaPath)
             ?? throw new InvalidDataException("meta.json の読み込みに失敗しました。");
-
-        var versionError = VersionChecker.Validate(meta);
-        if (versionError != null)
-        {
-            try
-            {
-                Directory.Delete(finalOutputDir, true);
-            }
-            catch
-            {
-                // ignored
-            }
-
-            throw new InvalidOperationException(versionError);
-        }
 
         if (!File.Exists(ymmpPath))
             throw new InvalidDataException("project.ymmp が見つかりません。不正な ymmx ファイルです。");
@@ -285,9 +279,9 @@ public static class YmmxExtractor
             Directory.Move(directory, backupDir);
             return backupDir;
         }
-        catch
+        catch (Exception ex)
         {
-            return null;
+            throw new IOException($"バックアップの作成に失敗しました。\n{ex.Message}", ex);
         }
     }
 }
