@@ -131,10 +131,11 @@ public static class YmmxExtractor
         if (string.Equals(ymmpPath, desired, StringComparison.OrdinalIgnoreCase))
             return ymmpPath;
 
-        var target = File.Exists(desired) ? GetUniqueFilePath(outputDir, safeName, ".ymmp") : desired;
+        if (File.Exists(desired))
+            File.Delete(desired);
 
-        File.Move(ymmpPath, target);
-        return target;
+        File.Move(ymmpPath, desired);
+        return desired;
     }
 
     private static string SanitizeFileName(string name)
