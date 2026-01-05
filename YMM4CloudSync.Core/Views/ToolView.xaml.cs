@@ -260,11 +260,7 @@ public partial class ToolView
             {
                 if (!string.IsNullOrEmpty(result.BackupDirectory))
                 {
-                    MessageBox.Show(
-                        $"既存のプロジェクトをバックアップしました。\n{result.BackupDirectory}",
-                        "バックアップ",
-                        MessageBoxButton.OK,
-                        MessageBoxImage.Information);
+                    await Task.Run(() => CleanupOldBackups(Path.GetDirectoryName(outputDir)!, projectName));
                 }
 
                 var ymmPath = YmmPathFinder.Find();
@@ -305,6 +301,30 @@ public partial class ToolView
         }
     }
 
+    private void CleanupOldBackups(string projectsDir, string projectName)
+    {
+        try
+        {
+            var pattern = $"{projectName}_bak_*";
+            var backups = Directory.GetDirectories(projectsDir, pattern)
+                .OrderByDescending(d => d)
+                .ToList();
+
+            const int keepCount = 3;
+
+            if (backups.Count <= keepCount) return;
+            
+            for (var i = keepCount; i < backups.Count; i++)
+            {
+                try { Directory.Delete(backups[i], true); } catch { /* ignored */ }
+            }
+        }
+        catch
+        {
+            // ignored
+        }
+    }
+    
     private async void OnDownloadClick(object sender, RoutedEventArgs e)
     {
         var svc = CurrentService;
@@ -428,7 +448,14 @@ public partial class ToolView
             var tempYmmxPath = Path.Combine(Path.GetTempPath(), $"{projectName}.ymmx");
 
             SetProcessingState(true, "パッケージ作成中...");
-            var packResult = await Task.Run(() => YmmxPacker.Pack(ymmpPath, tempYmmxPath, projectName));
+            
+            var packProgress = new Progress<double>(p =>
+            {
+                ProgressBar.Value = p;
+                ProgressText.Text = $"パッケージ作成中... {p:F0}%";
+            });
+            
+            var packResult = await Task.Run(() => YmmxPacker.Pack(ymmpPath, tempYmmxPath, projectName, packProgress));
 
             if (!packResult.Success)
             {
