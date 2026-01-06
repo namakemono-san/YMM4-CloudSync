@@ -27,7 +27,8 @@ public partial class ToolView
     public ReactiveProperty<CloudServiceItem?> SelectedCloudService { get; } = new();
     // ReSharper restore MemberCanBePrivate.Global
 
-    private bool _isProcessing;
+    // Using volatile to ensure thread-safe read/write of processing flag
+    private volatile bool _isProcessing;
 
     private ICloudStorageService? CurrentService => SelectedCloudService.Value?.Service;
     private bool IsConnected => SelectedCloudService.Value?.IsConnected == true;
@@ -45,24 +46,40 @@ public partial class ToolView
 
         SelectedCloudService.Subscribe(async void (_) =>
         {
-            CloudFilesList.ItemsSource = null;
+            try
+            {
+                CloudFilesList.ItemsSource = null;
 
-            var ok = IsConnected;
-            UploadButton.IsEnabled = ok;
-            RefreshButton.IsEnabled = ok;
+                var ok = IsConnected;
+                UploadButton.IsEnabled = ok;
+                RefreshButton.IsEnabled = ok;
 
-            if (ok)
-                await RefreshFileListAsync();
+                if (ok)
+                    await RefreshFileListAsync();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"サービス切り替え中にエラーが発生しました。\n{ex.Message}", "エラー",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+            }
         });
     }
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
-        LoadVersionInfo();
-        LoadChangelog();
-        LoadLicense();
+        try
+        {
+            LoadVersionInfo();
+            LoadChangelog();
+            LoadLicense();
 
-        await TryAutoConnectAsync();
+            await TryAutoConnectAsync();
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"初期化中にエラーが発生しました。\n{ex.Message}", "エラー",
+                MessageBoxButton.OK, MessageBoxImage.Error);
+        }
     }
 
     private void LoadVersionInfo()

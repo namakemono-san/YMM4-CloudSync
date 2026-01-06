@@ -27,6 +27,7 @@ public static class RetryHelper
             }
         }
 
+        // Final attempt without catching exceptions
         return await operation();
     }
 
