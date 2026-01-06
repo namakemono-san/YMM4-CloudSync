@@ -35,7 +35,7 @@ public sealed class OneDriveService : ICloudStorageService, IDisposable
     public void Dispose()
     {
         if (_disposed) return;
-        // HttpClient is now static and shared, no need to dispose
+        // Static HttpClient is managed at application level and should not be disposed here
         _disposed = true;
     }
 
