@@ -4,10 +4,24 @@ using System.Text;
 
 namespace YMM4CloudSync.YMMX.Core.Commons;
 
+/// <summary>
+/// Provides hash computation utilities for directory contents.
+/// </summary>
 public static class HashHelper
 {
     private const int FileBufferSize = 81920;
 
+    /// <summary>
+    /// Computes SHA256 hash of directory contents in a deterministic manner.
+    /// Files are sorted alphabetically and their relative paths are included in the hash
+    /// to ensure consistent results across different systems.
+    /// </summary>
+    /// <param name="directory">The directory to hash.</param>
+    /// <param name="includeLegacyFiles">Whether to include system files (Thumbs.db, .DS_Store) in the hash calculation.</param>
+    /// <param name="progress">Optional progress reporter for hash computation (0-100).</param>
+    /// <param name="totalBytes">Total bytes for progress calculation. Set to 0 to disable progress reporting.</param>
+    /// <param name="processedBytes">Reference to track processed bytes for progress reporting.</param>
+    /// <returns>Lowercase hexadecimal string representation of the SHA256 hash.</returns>
     public static string ComputeDirectoryHash(
         string directory, 
         bool includeLegacyFiles,
