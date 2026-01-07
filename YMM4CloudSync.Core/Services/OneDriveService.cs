@@ -164,7 +164,6 @@ public sealed class OneDriveService : ICloudStorageService, IDisposable
         }
         catch (Exception ex)
         {
-            ErrorReporter.ReportAndShowDialog(ex);
             throw;
         }
     }
