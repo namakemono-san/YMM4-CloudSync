@@ -1,4 +1,6 @@
-﻿using System.IO;
+﻿using System.Diagnostics;
+using System.IO;
+using System.Text.Json;
 using System.Windows;
 using YMM4CloudSync.Core.Commons;
 using YMM4CloudSync.Core.Views;
@@ -22,11 +24,13 @@ public class Plugin : IToolPlugin, IDisposable
 
     public Plugin()
     {
+        var sentrySettings = LoadSentrySettings();
+    
         _sentryGuard = SentrySdk.Init(o =>
         {
-            o.Dsn = "https://a4bff996c43a4087136bf25866d17ffc@o4510663508754432.ingest.us.sentry.io/4510663528611840";
-            o.Release = "ymm4-cloudsync@1.0.0"; 
-            o.SendDefaultPii = false; 
+            o.Dsn = sentrySettings.Dsn;
+            o.Release = sentrySettings.Release;
+            o.SendDefaultPii = sentrySettings.SendDefaultPii;
         });
 
         CheckFileAssociation();
@@ -38,7 +42,29 @@ public class Plugin : IToolPlugin, IDisposable
         _sentryGuard.Dispose();
     }
     
-    private void CleanUpTempFiles()
+    private static SentrySettings LoadSentrySettings()
+    {
+        try
+        {
+            var pluginDir = Path.GetDirectoryName(typeof(Plugin).Assembly.Location)!;
+            var configPath = Path.Combine(pluginDir, "appsettings.json");
+        
+            if (File.Exists(configPath))
+            {
+                var json = File.ReadAllText(configPath);
+                var config = JsonSerializer.Deserialize<AppSettings>(json);
+                return config?.Sentry ?? new SentrySettings();
+            }
+        }
+        catch
+        {
+            // ignored
+        }
+
+        return new SentrySettings();
+    }
+    
+    private static void CleanUpTempFiles()
     {
         try
         {
@@ -51,15 +77,15 @@ public class Plugin : IToolPlugin, IDisposable
                 {
                     Directory.Delete(dir, true);
                 }
-                catch
+                catch (Exception ex)
                 {
-                    // ignored
+                    Debug.WriteLine($"[YMM4CS][CleanUp] Failed to delete temp directory {dir}: {ex.Message}");
                 }
             }
         }
-        catch
+        catch (Exception ex)
         {
-            // ignored
+            Debug.WriteLine($"[YMM4CS][CleanUp] Failed to enumerate temp directories: {ex.Message}");
         }
     }
     
@@ -98,4 +124,16 @@ public class Plugin : IToolPlugin, IDisposable
                 MessageBoxImage.Error);
         }
     }
+}
+
+internal class AppSettings
+{
+    public SentrySettings Sentry { get; set; } = new();
+}
+
+internal class SentrySettings
+{
+    public string Dsn { get; set; } = "";
+    public string Release { get; set; } = "ymm4-cloudsync@1.0.0";
+    public bool SendDefaultPii { get; set; } = false;
 }
