@@ -1,7 +1,7 @@
 ﻿<Window x:Class="YMM4CloudSync.Core.Views.ErrorReportWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="エラー報告 - YMM4 Cloud Sync" Width="500" Height="250"
+        Title="エラー報告 - YMM4 Cloud Sync" Width="500" Height="270"
         MinHeight="270" MaxHeight="400"
         ResizeMode="NoResize" WindowStartupLocation="CenterScreen"
         Background="{DynamicResource {x:Static SystemColors.WindowBrushKey}}">
