@@ -110,57 +110,69 @@ public class GoogleDriveService : ICloudStorageService
         if (!File.Exists(localPath))
             throw new FileNotFoundException("アップロードするファイルが見つかりません。", localPath);
 
-        return await RetryHelper.ExecuteWithRetryAsync(async () =>
+        try
         {
-            var existingFileId = await FindFileByNameAsync(remoteName);
-
-            await using var stream = new FileStream(localPath, FileMode.Open, FileAccess.Read);
-            var totalSize = stream.Length;
-
-            Google.Apis.Upload.IUploadProgress result;
-            string fileId;
-
-            if (existingFileId != null)
+            return await RetryHelper.ExecuteWithRetryAsync(async () =>
             {
-                var updateMetadata = new Google.Apis.Drive.v3.Data.File { Name = remoteName };
-                var updateRequest = _driveService.Files.Update(updateMetadata, existingFileId, stream, "application/octet-stream");
-                updateRequest.Fields = "id, name, size, modifiedTime";
+                var existingFileId = await FindFileByNameAsync(remoteName);
 
-                updateRequest.ProgressChanged += p =>
+                await using var stream = new FileStream(localPath, FileMode.Open, FileAccess.Read);
+                var totalSize = stream.Length;
+
+                Google.Apis.Upload.IUploadProgress result;
+                string fileId;
+
+                if (existingFileId != null)
                 {
-                    if (totalSize > 0)
-                        progress?.Report((double)p.BytesSent / totalSize * 100);
-                };
+                    var updateMetadata = new Google.Apis.Drive.v3.Data.File { Name = remoteName };
+                    var updateRequest = _driveService.Files.Update(updateMetadata, existingFileId, stream,
+                        "application/octet-stream");
+                    updateRequest.Fields = "id, name, size, modifiedTime";
 
-                result = await updateRequest.UploadAsync();
-                fileId = updateRequest.ResponseBody?.Id ?? existingFileId;
-            }
-            else
-            {
-                var fileMetadata = new Google.Apis.Drive.v3.Data.File
+                    updateRequest.ProgressChanged += p =>
+                    {
+                        if (totalSize > 0)
+                            progress?.Report((double)p.BytesSent / totalSize * 100);
+                    };
+
+                    result = await updateRequest.UploadAsync();
+                    fileId = updateRequest.ResponseBody?.Id ?? existingFileId;
+                }
+                else
                 {
-                    Name = remoteName,
-                    Parents = _appFolderId != null ? [_appFolderId] : null
-                };
+                    var fileMetadata = new Google.Apis.Drive.v3.Data.File
+                    {
+                        Name = remoteName,
+                        Parents = _appFolderId != null ? [_appFolderId] : null
+                    };
 
-                var createRequest = _driveService.Files.Create(fileMetadata, stream, "application/octet-stream");
-                createRequest.Fields = "id, name, size, modifiedTime";
+                    var createRequest = _driveService.Files.Create(fileMetadata, stream, "application/octet-stream");
+                    createRequest.Fields = "id, name, size, modifiedTime";
 
-                createRequest.ProgressChanged += p =>
-                {
-                    if (totalSize > 0)
-                        progress?.Report((double)p.BytesSent / totalSize * 100);
-                };
+                    createRequest.ProgressChanged += p =>
+                    {
+                        if (totalSize > 0)
+                            progress?.Report((double)p.BytesSent / totalSize * 100);
+                    };
 
-                result = await createRequest.UploadAsync();
-                fileId = createRequest.ResponseBody?.Id ?? throw new Exception("アップロード後のファイルIDを取得できませんでした。");
-            }
+                    result = await createRequest.UploadAsync();
+                    fileId = createRequest.ResponseBody?.Id ?? throw new Exception("アップロード後のファイルIDを取得できませんでした。");
+                }
 
-            if (result.Status != Google.Apis.Upload.UploadStatus.Completed)
-                throw new Exception($"アップロードに失敗しました: {result.Exception?.Message}");
+                if (result.Status != Google.Apis.Upload.UploadStatus.Completed)
+                    throw new Exception($"アップロードに失敗しました: {result.Exception?.Message}");
 
-            return fileId;
-        });
+                return fileId;
+            });
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            throw;
+        }
     }
 
     private async Task<string?> FindFileByNameAsync(string fileName)

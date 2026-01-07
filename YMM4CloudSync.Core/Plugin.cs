@@ -6,7 +6,7 @@ using YukkuriMovieMaker.Plugin;
 
 namespace YMM4CloudSync.Core;
 
-public class Plugin : IToolPlugin
+public class Plugin : IToolPlugin, IDisposable
 {
     public string Name => "YMM4 Cloud Sync";
 
@@ -18,11 +18,24 @@ public class Plugin : IToolPlugin
     private static readonly string IconPath = Path.Combine(PluginDirectory, "Resources", "YMMX_logo.ico");
     
     private readonly YmmxFileExtension _ymmxFileExtension = new(LauncherPath, IconPath);
+    private readonly IDisposable _sentryGuard;
 
     public Plugin()
     {
+        _sentryGuard = SentrySdk.Init(o =>
+        {
+            o.Dsn = "https://a4bff996c43a4087136bf25866d17ffc@o4510663508754432.ingest.us.sentry.io/4510663528611840";
+            o.Release = "ymm4-cloudsync@1.0.0"; 
+            o.SendDefaultPii = false; 
+        });
+
         CheckFileAssociation();
         Task.Run(CleanUpTempFiles);
+    }
+    
+    public void Dispose()
+    {
+        _sentryGuard.Dispose();
     }
     
     private void CleanUpTempFiles()

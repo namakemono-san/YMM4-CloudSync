@@ -54,6 +54,8 @@
     <PackageReference Include="ReactiveProperty.Core" Version="8.2.0" ExcludeAssets="runtime" />
     
     <PackageReference Include="ReactiveProperty" Version="8.2.0" ExcludeAssets="runtime" />
+    
+    <PackageReference Include="Sentry" Version="6.0.0" />
 
     <PackageReference Include="System.Management" Version="10.0.1" ExcludeAssets="runtime" />
     
