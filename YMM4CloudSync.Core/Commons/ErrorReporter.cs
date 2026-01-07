@@ -9,7 +9,13 @@ public static class ErrorReporter
     {
         var sentryId = SentrySdk.CaptureException(ex);
 
-        Application.Current.Dispatcher.Invoke(() =>
+        var application = Application.Current;
+        if (application == null)
+        {
+            return;
+        }
+
+        application.Dispatcher.Invoke(() =>
         {
             var window = new ErrorReportWindow(ex, sentryId);
             window.ShowDialog();
