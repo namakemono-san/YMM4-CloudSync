@@ -4,7 +4,8 @@ namespace YMM4CloudSync.Core.Views;
 
 public partial class ErrorReportWindow : Window
 {
-    private readonly SentryId _sentryId;private readonly Exception _exception;
+    private readonly SentryId _sentryId;
+    private readonly Exception _exception;
 
     public ErrorReportWindow(Exception ex, SentryId sentryId)
     {
