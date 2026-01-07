@@ -139,22 +139,34 @@ public sealed class OneDriveService : ICloudStorageService, IDisposable
             return await UploadLargeFileAsync(localPath, remotePath, progress);
         }
 
-        return await RetryHelper.ExecuteWithRetryAsync(async () =>
+        try
         {
-            await using var fs = new FileStream(localPath, FileMode.Open, FileAccess.Read, FileShare.Read);
-            var url = $"{GraphBase}/me/drive/special/approot:/{EscapePath(remotePath)}:/content";
+            return await RetryHelper.ExecuteWithRetryAsync(async () =>
+            {
+                await using var fs = new FileStream(localPath, FileMode.Open, FileAccess.Read, FileShare.Read);
+                var url = $"{GraphBase}/me/drive/special/approot:/{EscapePath(remotePath)}:/content";
 
-            using var content = new ProgressStreamContent(fs, fs.Length, progress);
-            content.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
+                using var content = new ProgressStreamContent(fs, fs.Length, progress);
+                content.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
 
-            using var resp = await SendAsync(HttpMethod.Put, url, content);
-            await EnsureSuccessOrThrowAsync(resp);
+                using var resp = await SendAsync(HttpMethod.Put, url, content);
+                await EnsureSuccessOrThrowAsync(resp);
 
-            await using var s = await resp.Content.ReadAsStreamAsync();
-            var doc = await JsonDocument.ParseAsync(s);
+                await using var s = await resp.Content.ReadAsStreamAsync();
+                var doc = await JsonDocument.ParseAsync(s);
 
-            return doc.RootElement.GetProperty("id").GetString() ?? "";
-        });
+                return doc.RootElement.GetProperty("id").GetString() ?? "";
+            });
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            ErrorReporter.ReportAndShowDialog(ex);
+            throw;
+        }
     }
 
     private async Task<string> UploadLargeFileAsync(string localPath, string remotePath, IProgress<double>? progress)

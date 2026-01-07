@@ -163,7 +163,8 @@ public partial class ToolView
         }
         catch (Exception ex)
         {
-            MessageBox.Show(ex.Message, "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+            ErrorReporter.ReportAndShowDialog(ex);
+            throw;
         }
         finally
         {
@@ -190,8 +191,8 @@ public partial class ToolView
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"ファイル一覧の取得に失敗しました。\n{ex.Message}", "エラー",
-                MessageBoxButton.OK, MessageBoxImage.Error);
+            ErrorReporter.ReportAndShowDialog(ex);
+            throw;
         }
     }
 
@@ -280,19 +281,12 @@ public partial class ToolView
                 }
             }
 
-            try
-            {
-                File.Delete(tempPath);
-            }
-            catch
-            {
-                // ignored
-            }
+            try { File.Delete(tempPath); } catch { /* ignored */ }
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"プロジェクトを開けませんでした。\n{ex.Message}", "エラー",
-                MessageBoxButton.OK, MessageBoxImage.Error);
+            ErrorReporter.ReportAndShowDialog(ex);
+            throw;
         }
         finally
         {
@@ -409,7 +403,8 @@ public partial class ToolView
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"削除に失敗しました。\n{ex.Message}", "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+            ErrorReporter.ReportAndShowDialog(ex);
+            throw;
         }
         finally
         {
@@ -473,14 +468,7 @@ public partial class ToolView
 
             await svc.UploadFileAsync(tempYmmxPath, $"{projectName}.ymmx", progress);
 
-            try
-            {
-                File.Delete(tempYmmxPath);
-            }
-            catch
-            {
-                // ignored
-            }
+            try { File.Delete(tempYmmxPath); } catch { /* ignored */ }
 
             await RefreshFileListAsync();
 
@@ -493,8 +481,8 @@ public partial class ToolView
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"保存に失敗しました。\n{ex.Message}", "エラー",
-                MessageBoxButton.OK, MessageBoxImage.Error);
+            ErrorReporter.ReportAndShowDialog(ex);
+            throw;
         }
         finally
         {
