@@ -59,8 +59,12 @@ public partial class ToolView
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"サービス切り替え中にエラーが発生しました。\n{ex.Message}", "エラー",
-                    MessageBoxButton.OK, MessageBoxImage.Error);
+                SentrySdk.CaptureException(ex);
+                MessageBox.Show(
+                    "サービス切り替え中にエラーが発生しました。", 
+                    "エラー",
+                    MessageBoxButton.OK, 
+                    MessageBoxImage.Error);
             }
         });
     }
@@ -77,7 +81,8 @@ public partial class ToolView
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"初期化中にエラーが発生しました。\n{ex.Message}", "エラー",
+            SentrySdk.CaptureException(ex);
+            MessageBox.Show($"初期化中にエラーが発生しました。", "エラー",
                 MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
@@ -374,7 +379,8 @@ public partial class ToolView
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"ダウンロードに失敗しました。\n{ex.Message}", "エラー",
+            SentrySdk.CaptureException(ex);
+            MessageBox.Show($"ダウンロードに失敗しました。", "エラー",
                 MessageBoxButton.OK, MessageBoxImage.Error);
         }
         finally

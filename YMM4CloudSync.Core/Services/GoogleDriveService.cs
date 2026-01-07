@@ -7,7 +7,7 @@ using YMM4CloudSync.Core.Commons;
 
 namespace YMM4CloudSync.Core.Services;
 
-public class GoogleDriveService : ICloudStorageService
+public class GoogleDriveService : ICloudStorageService, IDisposable
 {
     public string ServiceName => "Google Drive";
 
@@ -23,6 +23,7 @@ public class GoogleDriveService : ICloudStorageService
 
     private DriveService? _driveService;
     private string? _appFolderId;
+    private bool _disposed;
 
     public bool IsAuthenticated => _driveService != null;
 
@@ -87,7 +88,26 @@ public class GoogleDriveService : ICloudStorageService
             cts?.Dispose();
         }
     }
-
+    
+    public void Dispose()
+    {
+        Dispose(true);
+        GC.SuppressFinalize(this);
+    }
+    
+    protected virtual void Dispose(bool disposing)
+    {
+        if (_disposed) return;
+        
+        if (disposing)
+        {
+            _driveService?.Dispose();
+            _driveService = null;
+        }
+        
+        _disposed = true;
+    }
+    
     public async Task LogoutAsync()
     {
         if (Directory.Exists(CredentialPath))
@@ -110,69 +130,58 @@ public class GoogleDriveService : ICloudStorageService
         if (!File.Exists(localPath))
             throw new FileNotFoundException("アップロードするファイルが見つかりません。", localPath);
 
-        try
+        return await RetryHelper.ExecuteWithRetryAsync(async () =>
         {
-            return await RetryHelper.ExecuteWithRetryAsync(async () =>
+            var existingFileId = await FindFileByNameAsync(remoteName);
+
+            await using var stream = new FileStream(localPath, FileMode.Open, FileAccess.Read);
+            var totalSize = stream.Length;
+
+            Google.Apis.Upload.IUploadProgress result;
+            string fileId;
+
+            if (existingFileId != null)
             {
-                var existingFileId = await FindFileByNameAsync(remoteName);
+                var updateMetadata = new Google.Apis.Drive.v3.Data.File { Name = remoteName };
+                var updateRequest = _driveService.Files.Update(updateMetadata, existingFileId, stream,
+                    "application/octet-stream");
+                updateRequest.Fields = "id, name, size, modifiedTime";
 
-                await using var stream = new FileStream(localPath, FileMode.Open, FileAccess.Read);
-                var totalSize = stream.Length;
-
-                Google.Apis.Upload.IUploadProgress result;
-                string fileId;
-
-                if (existingFileId != null)
+                updateRequest.ProgressChanged += p =>
                 {
-                    var updateMetadata = new Google.Apis.Drive.v3.Data.File { Name = remoteName };
-                    var updateRequest = _driveService.Files.Update(updateMetadata, existingFileId, stream,
-                        "application/octet-stream");
-                    updateRequest.Fields = "id, name, size, modifiedTime";
+                    if (totalSize > 0)
+                        progress?.Report((double)p.BytesSent / totalSize * 100);
+                };
 
-                    updateRequest.ProgressChanged += p =>
-                    {
-                        if (totalSize > 0)
-                            progress?.Report((double)p.BytesSent / totalSize * 100);
-                    };
-
-                    result = await updateRequest.UploadAsync();
-                    fileId = updateRequest.ResponseBody?.Id ?? existingFileId;
-                }
-                else
+                result = await updateRequest.UploadAsync();
+                fileId = updateRequest.ResponseBody?.Id ?? existingFileId;
+            }
+            else
+            {
+                var fileMetadata = new Google.Apis.Drive.v3.Data.File
                 {
-                    var fileMetadata = new Google.Apis.Drive.v3.Data.File
-                    {
-                        Name = remoteName,
-                        Parents = _appFolderId != null ? [_appFolderId] : null
-                    };
+                    Name = remoteName,
+                    Parents = _appFolderId != null ? [_appFolderId] : null
+                };
 
-                    var createRequest = _driveService.Files.Create(fileMetadata, stream, "application/octet-stream");
-                    createRequest.Fields = "id, name, size, modifiedTime";
+                var createRequest = _driveService.Files.Create(fileMetadata, stream, "application/octet-stream");
+                createRequest.Fields = "id, name, size, modifiedTime";
 
-                    createRequest.ProgressChanged += p =>
-                    {
-                        if (totalSize > 0)
-                            progress?.Report((double)p.BytesSent / totalSize * 100);
-                    };
+                createRequest.ProgressChanged += p =>
+                {
+                    if (totalSize > 0)
+                        progress?.Report((double)p.BytesSent / totalSize * 100);
+                };
 
-                    result = await createRequest.UploadAsync();
-                    fileId = createRequest.ResponseBody?.Id ?? throw new Exception("アップロード後のファイルIDを取得できませんでした。");
-                }
+                result = await createRequest.UploadAsync();
+                fileId = createRequest.ResponseBody?.Id ?? throw new Exception("アップロード後のファイルIDを取得できませんでした。");
+            }
 
-                if (result.Status != Google.Apis.Upload.UploadStatus.Completed)
-                    throw new Exception($"アップロードに失敗しました: {result.Exception?.Message}");
+            if (result.Status != Google.Apis.Upload.UploadStatus.Completed)
+                throw new Exception($"アップロードに失敗しました: {result.Exception?.Message}");
 
-                return fileId;
-            });
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (Exception)
-        {
-            throw;
-        }
+            return fileId;
+        });
     }
 
     private async Task<string?> FindFileByNameAsync(string fileName)
