@@ -60,11 +60,8 @@ public partial class ToolView
             catch (Exception ex)
             {
                 SentrySdk.CaptureException(ex);
-                MessageBox.Show(
-                    "サービス切り替え中にエラーが発生しました。", 
-                    "エラー",
-                    MessageBoxButton.OK, 
-                    MessageBoxImage.Error);
+                MessageBox.Show("サービス切り替え中にエラーが発生しました。", "エラー",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
             }
         });
     }
