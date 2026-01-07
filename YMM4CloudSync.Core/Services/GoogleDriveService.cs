@@ -169,9 +169,8 @@ public class GoogleDriveService : ICloudStorageService
         {
             throw;
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            ErrorReporter.ReportAndShowDialog(ex);
             throw;
         }
     }
