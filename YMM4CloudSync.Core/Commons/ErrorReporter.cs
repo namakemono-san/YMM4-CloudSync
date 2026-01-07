@@ -3,7 +3,7 @@ using YMM4CloudSync.Core.Views;
 
 namespace YMM4CloudSync.Core.Commons;
 
-public abstract class ErrorReporter
+public static class ErrorReporter
 {
     public static void ReportAndShowDialog(Exception ex)
     {
