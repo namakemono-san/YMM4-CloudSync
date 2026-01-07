@@ -164,7 +164,6 @@ public partial class ToolView
         catch (Exception ex)
         {
             ErrorReporter.ReportAndShowDialog(ex);
-            throw;
         }
         finally
         {
