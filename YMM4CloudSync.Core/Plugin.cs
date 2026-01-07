@@ -128,7 +128,7 @@ public class Plugin : IToolPlugin, IDisposable
 
 internal class AppSettings
 {
-    public SentrySettings Sentry { get; set; } = new();
+    public SentrySettings Sentry { get; init; } = new();
 }
 
 internal class SentrySettings
