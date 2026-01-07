@@ -20,17 +20,22 @@ public sealed class OneDriveService : ICloudStorageService, IDisposable
     private static readonly string TokenCachePath =
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "YMM4CloudSync", "onedrive_msal_cache.bin");
+    // Using Lock class (.NET 9+) for thread-safe token cache access
+    // This ensures proper synchronization when multiple operations access the cache
     private static readonly Lock FileLock = new();
+    
+    // Static HttpClient to avoid socket exhaustion issues
+    // See: https://learn.microsoft.com/en-us/dotnet/fundamentals/networking/http/httpclient-guidelines
+    private static readonly HttpClient SharedHttpClient = new();
     
     private IPublicClientApplication? _pca;
     private IAccount? _account;
-    private readonly HttpClient _http = new();
     private bool _disposed;
 
     public void Dispose()
     {
         if (_disposed) return;
-        _http.Dispose();
+        // Static HttpClient is managed at application level and should not be disposed here
         _disposed = true;
     }
 
@@ -163,6 +168,9 @@ public sealed class OneDriveService : ICloudStorageService, IDisposable
         
         await using var fs = new FileStream(localPath, FileMode.Open, FileAccess.Read, FileShare.Read);
         var totalSize = fs.Length;
+        // OneDrive recommends chunk sizes that are multiples of 320 KiB (327,680 bytes)
+        // Using 3.2MB (10 * 320KB) for optimal upload performance
+        // See: https://learn.microsoft.com/en-us/graph/api/driveitem-createuploadsession
         const int chunkSize = 10 * 320 * 1024;
 
         var buffer = new byte[chunkSize];
@@ -187,7 +195,7 @@ public sealed class OneDriveService : ICloudStorageService, IDisposable
 
                 using var req = new HttpRequestMessage(HttpMethod.Put, sessionUrl);
                 req.Content = content;
-                using var resp = await _http.SendAsync(req);
+                using var resp = await SharedHttpClient.SendAsync(req);
 
                 if (!resp.IsSuccessStatusCode && resp.StatusCode != System.Net.HttpStatusCode.Accepted)
                 {
@@ -320,7 +328,7 @@ public sealed class OneDriveService : ICloudStorageService, IDisposable
         using var req = new HttpRequestMessage(method, url);
         req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
         if (content != null) req.Content = content;
-        return await _http.SendAsync(req, completion);
+        return await SharedHttpClient.SendAsync(req, completion);
     }
 
     private static async Task EnsureSuccessOrThrowAsync(HttpResponseMessage resp)

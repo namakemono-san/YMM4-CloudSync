@@ -19,6 +19,9 @@ public class PackResult
 
 public static class YmmxPacker
 {
+    // Buffer size for file operations (80KB for optimal disk I/O)
+    private const int FileBufferSize = 81920;
+    
     private static readonly Dictionary<string, string> TypeToFolder = new()
     {
         { "YukkuriMovieMaker.Project.Items.VideoItem", "videos" },
@@ -245,7 +248,7 @@ public static class YmmxPacker
             .Where(f => !Path.GetFileName(f).Equals(".DS_Store", StringComparison.OrdinalIgnoreCase))
             .OrderBy(f => f, StringComparer.Ordinal);
 
-        var buffer = new byte[81920];
+        var buffer = new byte[FileBufferSize];
 
         foreach (var file in files)
         {
@@ -281,7 +284,7 @@ public static class YmmxPacker
         using var archive = new ZipArchive(zipToOpen, ZipArchiveMode.Create);
         
         var files = Directory.GetFiles(sourceDir, "*", SearchOption.AllDirectories);
-        var buffer = new byte[81920];
+        var buffer = new byte[FileBufferSize];
 
         foreach (var file in files)
         {

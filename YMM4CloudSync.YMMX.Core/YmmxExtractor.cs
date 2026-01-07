@@ -28,6 +28,9 @@ public class ExtractResult
 
 public static class YmmxExtractor
 {
+    // Buffer size for file operations (80KB for optimal disk I/O)
+    private const int FileBufferSize = 81920;
+    
     public static ExtractResult Extract(
         string ymmxPath,
         string outputDirectory,
@@ -98,12 +101,16 @@ public static class YmmxExtractor
             throw new InvalidOperationException($"展開に失敗しました: {ex.Message}", ex);
         }
 
-        var hashMismatch = false;if (newMeta?.Hash != null)
+        var hashMismatch = false;
+        // Verify file integrity using hash
+        if (newMeta?.Hash != null)
         {
             var actualHash = ComputeContentHash(finalOutputDir);
         
             if (!string.Equals(newMeta.Hash, actualHash, StringComparison.OrdinalIgnoreCase))
             {
+                // Try legacy hash computation for backward compatibility with older YMMX files
+                // Legacy version included Thumbs.db and .DS_Store files in hash calculation
                 var legacyHash = ComputeLegacyContentHashSafely(finalOutputDir);
             
                 if (!string.Equals(newMeta.Hash, legacyHash, StringComparison.OrdinalIgnoreCase))
@@ -260,7 +267,7 @@ public static class YmmxExtractor
             .Where(f => !Path.GetFileName(f).Equals(".DS_Store", StringComparison.OrdinalIgnoreCase))
             .OrderBy(f => f, StringComparer.Ordinal);
 
-        var buffer = new byte[81920];
+        var buffer = new byte[FileBufferSize];
         
         foreach (var file in files)
         {
@@ -288,7 +295,7 @@ public static class YmmxExtractor
             .Where(f => !f.EndsWith("meta.json", StringComparison.OrdinalIgnoreCase))
             .OrderBy(f => f, StringComparer.Ordinal);
 
-        var buffer = new byte[81920];
+        var buffer = new byte[FileBufferSize];
 
         foreach (var file in files)
         {
