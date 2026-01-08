@@ -73,8 +73,9 @@ public sealed class OneDriveService : ICloudStorageService, IDisposable
             _account = interactive.Account;
             return true;
         }
-        catch
+        catch (Exception ex)
         {
+            ErrorReporter.ReportAndShowDialog(ex);
             _account = null;
             return false;
         }
