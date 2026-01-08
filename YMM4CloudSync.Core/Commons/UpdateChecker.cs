@@ -11,17 +11,20 @@ public class UpdateChecker
     private const string Owner = "namakemono-san";
     private const string Repo = "YMM4-CloudSync";
     private const string UserAgent = "YMM4CloudSync-UpdateChecker";
+    
+    private static readonly HttpClient SharedHttpClient = new();
 
     public async Task<ReleaseInfo?> CheckForUpdatesAsync()
     {
         try
         {
-            using var client = new HttpClient();
-            client.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue(UserAgent, "1.0"));
-            client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/vnd.github.v3+json"));
+            SharedHttpClient.DefaultRequestHeaders.UserAgent.Clear();
+            SharedHttpClient.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue(UserAgent, "1.0"));
+            SharedHttpClient.DefaultRequestHeaders.Accept.Clear();
+            SharedHttpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/vnd.github.v3+json"));
 
             const string url = $"https://api.github.com/repos/{Owner}/{Repo}/releases";
-            var response = await client.GetAsync(new Uri(url));
+            var response = await SharedHttpClient.GetAsync(new Uri(url));
 
             if (!response.IsSuccessStatusCode) return null;
 
