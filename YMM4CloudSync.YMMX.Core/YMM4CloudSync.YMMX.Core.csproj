@@ -10,6 +10,7 @@
     <DebugSymbols>false</DebugSymbols>
     <GenerateDependencyFile>false</GenerateDependencyFile>
     <GenerateRuntimeConfigurationFiles>false</GenerateRuntimeConfigurationFiles>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <OutDir>$(SolutionDir)build\$(Configuration)\</OutDir>
   </PropertyGroup>
   

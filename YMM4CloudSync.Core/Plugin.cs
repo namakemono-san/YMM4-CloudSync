@@ -18,13 +18,14 @@ public class Plugin : IToolPlugin, IDisposable
     private static readonly string PluginDirectory = Path.GetDirectoryName(typeof(Plugin).Assembly.Location)!;
     private static readonly string LauncherPath = Path.Combine(PluginDirectory, "YMM4CloudSync.YMMX.Launcher.exe");
     private static readonly string IconPath = Path.Combine(PluginDirectory, "Resources", "YMMX_logo.ico");
-    
+
     private readonly YmmxFileExtension _ymmxFileExtension = new(LauncherPath, IconPath);
     private readonly IDisposable _sentryGuard;
 
     public Plugin()
     {
-        var sentrySettings = LoadSentrySettings();
+        var settings = LoadSettings();
+        var sentrySettings = settings.Sentry;
     
         _sentryGuard = SentrySdk.Init(o =>
         {
@@ -35,6 +36,11 @@ public class Plugin : IToolPlugin, IDisposable
 
         CheckFileAssociation();
         Task.Run(CleanUpTempFiles);
+        
+        if (settings.Update.EnableUpdateCheck)
+        {
+            Task.Run(CheckUpdateAsync);
+        }
     }
     
     public void Dispose()
@@ -42,7 +48,7 @@ public class Plugin : IToolPlugin, IDisposable
         _sentryGuard.Dispose();
     }
     
-    private static SentrySettings LoadSentrySettings()
+    private static AppSettings LoadSettings()
     {
         try
         {
@@ -53,7 +59,7 @@ public class Plugin : IToolPlugin, IDisposable
             {
                 var json = File.ReadAllText(configPath);
                 var config = JsonSerializer.Deserialize<AppSettings>(json);
-                return config?.Sentry ?? new SentrySettings();
+                return config ?? new AppSettings();
             }
         }
         catch
@@ -61,8 +67,9 @@ public class Plugin : IToolPlugin, IDisposable
             // ignored
         }
 
-        return new SentrySettings();
+        return new AppSettings();
     }
+
     
     private static void CleanUpTempFiles()
     {
@@ -86,6 +93,22 @@ public class Plugin : IToolPlugin, IDisposable
         catch (Exception ex)
         {
             Debug.WriteLine($"[YMM4CS][CleanUp] Failed to enumerate temp directories: {ex.Message}");
+        }
+    }
+
+    private static async Task CheckUpdateAsync()
+    {
+        Console.WriteLine("[YMM4CS][Update] Checking for updates...");;
+        var checker = new UpdateChecker();
+        var info = await checker.CheckForUpdatesAsync();
+        
+        if (info != null)
+        {
+            Application.Current.Dispatcher.Invoke(() =>
+            {
+                var window = new UpdateNotificationWindow(info);
+                window.ShowDialog();
+            });
         }
     }
     
@@ -129,6 +152,7 @@ public class Plugin : IToolPlugin, IDisposable
 internal class AppSettings
 {
     public SentrySettings Sentry { get; init; } = new();
+    public UpdateSettings Update { get; init; } = new();
 }
 
 internal class SentrySettings
@@ -136,4 +160,9 @@ internal class SentrySettings
     public string Dsn { get; set; } = "";
     public string Release { get; set; } = "ymm4-cloudsync@1.0.0";
     public bool SendDefaultPii { get; set; } = false;
+}
+
+internal class UpdateSettings
+{
+    public bool EnableUpdateCheck { get; set; } = true;
 }

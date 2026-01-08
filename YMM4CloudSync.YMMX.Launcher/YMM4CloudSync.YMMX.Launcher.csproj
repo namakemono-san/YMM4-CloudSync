@@ -21,6 +21,7 @@
 
     <DebugType>none</DebugType>
     <DebugSymbols>false</DebugSymbols>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
 
     <OutDir>$(SolutionDir)build\$(Configuration)\</OutDir>
     <ApplicationIcon>Resources\YMMX_logo.ico</ApplicationIcon>

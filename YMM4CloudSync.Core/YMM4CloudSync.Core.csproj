@@ -19,6 +19,7 @@
     <GenerateRuntimeConfigurationFiles>false</GenerateRuntimeConfigurationFiles>
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
     <DisableFastUpToDateCheck>true</DisableFastUpToDateCheck>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <OutDir>$(SolutionDir)build\$(Configuration)\</OutDir>
   </PropertyGroup>
 
