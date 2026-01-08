@@ -62,9 +62,9 @@ public class Plugin : IToolPlugin, IDisposable
                 return config ?? new AppSettings();
             }
         }
-        catch
+        catch (Exception ex)
         {
-            // ignored
+            SentrySdk.CaptureException(ex);
         }
 
         return new AppSettings();

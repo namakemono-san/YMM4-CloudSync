@@ -27,12 +27,12 @@ public static class LicenseLoader
                 
                 result.Add(new LicenseFile(name, text));
             }
-            catch
+            catch (Exception ex)
             {
-                // ignored
+                SentrySdk.CaptureException(ex);
             }
         }
 
         return result;
     }
-}
+}

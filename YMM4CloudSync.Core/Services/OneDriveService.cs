@@ -354,9 +354,9 @@ public sealed class OneDriveService : ICloudStorageService, IDisposable
                 }
             }
         }
-        catch
+        catch (Exception ex)
         {
-            // ignored
+            SentrySdk.CaptureException(ex);
         }
 
         var message = code switch

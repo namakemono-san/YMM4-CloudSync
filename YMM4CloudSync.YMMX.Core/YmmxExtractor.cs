@@ -1,5 +1,6 @@
 using System.IO;
 using System.IO.Compression;
+using System.Security;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -233,6 +234,12 @@ public static class YmmxExtractor
                     if (!string.IsNullOrEmpty(relativePath) && relativePath.StartsWith("assets/"))
                     {
                         var absolutePath = Path.GetFullPath(Path.Combine(baseDirectory, relativePath));
+                        
+                        if (!absolutePath.StartsWith(Path.GetFullPath(baseDirectory) + Path.DirectorySeparatorChar))
+                        {
+                            throw new SecurityException("Invalid file path detected");
+                        }
+                        
                         obj["FilePath"] = absolutePath;
                     }
                 }
