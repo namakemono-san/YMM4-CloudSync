@@ -21,7 +21,8 @@
 
 ## 動作確認済みバージョン
 
-- YukkuriMovieMaker v4.48.0.2
+- YukkuriMovieMaker v4.48.0.3
+- YukkuriMovieMaker v4.48.0.3 Lite
 
 ## 前提条件
 
