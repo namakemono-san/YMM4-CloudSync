@@ -132,7 +132,8 @@ public static class YmmxPacker
         string assetsDir, 
         Dictionary<string, string> filePaths,
         Dictionary<string, HashSet<string>> usedFileNames,
-        List<string> missingFiles)
+        List<string> missingFiles,
+        bool isRoot = true)
     {
         switch (node)
         {
@@ -151,12 +152,14 @@ public static class YmmxPacker
                     }
                 }
 
-                if (obj.TryGetPropertyValue("FilePath", out var filePathNode) && filePathNode != null)
+                if (!isRoot && obj.TryGetPropertyValue("FilePath", out var filePathNode) && filePathNode != null)
                 {
                     var originalPath = filePathNode.GetValue<string>();
                     if (!string.IsNullOrEmpty(originalPath))
                     {
-                        if (filePaths.TryGetValue(originalPath, out var existingFullPath))
+                        var normalizedPath = Path.GetFullPath(originalPath);
+                        
+                        if (filePaths.TryGetValue(normalizedPath, out var existingFullPath))
                         {
                             var relativeFromAssets = Path.GetRelativePath(assetsDir, existingFullPath);
                             var relativePath = $"assets/{relativeFromAssets}".Replace("\\", "/");
@@ -164,10 +167,10 @@ public static class YmmxPacker
                         }
                         else
                         {
-                            if (!File.Exists(originalPath))
+                            if (!File.Exists(normalizedPath))
                             {
-                                if (!missingFiles.Contains(originalPath))
-                                    missingFiles.Add(originalPath);
+                                if (!missingFiles.Contains(normalizedPath))
+                                    missingFiles.Add(normalizedPath);
                             }
                             else
                             {
@@ -180,13 +183,13 @@ public static class YmmxPacker
                                     usedFileNames[subFolder] = usedNames;
                                 }
 
-                                var uniqueFileName = GetUniqueFileName(originalPath, usedNames, subFolderPath);
+                                var uniqueFileName = GetUniqueFileName(normalizedPath, usedNames, subFolderPath);
                                 usedNames.Add(uniqueFileName);
 
                                 var relativePath = $"assets/{subFolder}/{uniqueFileName}";
                                 var fullPath = Path.Combine(assetsDir, subFolder, uniqueFileName);
 
-                                filePaths[originalPath] = fullPath;
+                                filePaths[normalizedPath] = fullPath;
                                 obj["FilePath"] = relativePath;
                             }
                         }
@@ -197,7 +200,7 @@ public static class YmmxPacker
                 {
                     if (prop.Value != null)
                     {
-                        CollectAndRewritePaths(prop.Value, assetsDir, filePaths, usedFileNames, missingFiles);
+                        CollectAndRewritePaths(prop.Value, assetsDir, filePaths, usedFileNames, missingFiles, false);
                     }
                 }
 
@@ -209,7 +212,7 @@ public static class YmmxPacker
                 {
                     if (item != null)
                     {
-                        CollectAndRewritePaths(item, assetsDir, filePaths, usedFileNames, missingFiles);
+                        CollectAndRewritePaths(item, assetsDir, filePaths, usedFileNames, missingFiles, false);
                     }
                 }
 
