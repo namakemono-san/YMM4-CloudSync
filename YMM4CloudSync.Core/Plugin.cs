@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.IO;
 using System.Text.Json;
 using System.Windows;
@@ -70,7 +70,6 @@ public class Plugin : IToolPlugin, IDisposable
         return new AppSettings();
     }
 
-    
     private static void CleanUpTempFiles()
     {
         try
