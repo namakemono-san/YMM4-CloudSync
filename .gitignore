@@ -516,6 +516,7 @@ $RECYCLE.BIN/
 *.lnk
 
 # Original
+.idea/
 build/
 GoogleDriveCredentials.cs
 OneDriveCredentials.cs
