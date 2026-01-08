@@ -138,6 +138,9 @@ public static class YmmxPacker
         {
             case JsonObject obj:
             {
+                obj.Remove("LayoutXml");
+                obj.Remove("ToolStates");
+                
                 string? folder = null;
                 if (obj.TryGetPropertyValue("$type", out var typeNode))
                 {
