@@ -145,33 +145,22 @@ public sealed class OneDriveService : ICloudStorageService, IDisposable
             return await UploadLargeFileAsync(localPath, remotePath, progress);
         }
 
-        try
+        return await RetryHelper.ExecuteWithRetryAsync(async () =>
         {
-            return await RetryHelper.ExecuteWithRetryAsync(async () =>
-            {
-                await using var fs = new FileStream(localPath, FileMode.Open, FileAccess.Read, FileShare.Read);
-                var url = $"{GraphBase}/me/drive/special/approot:/{EscapePath(remotePath)}:/content";
+            await using var fs = new FileStream(localPath, FileMode.Open, FileAccess.Read, FileShare.Read);
+            var url = $"{GraphBase}/me/drive/special/approot:/{EscapePath(remotePath)}:/content";
 
-                using var content = new ProgressStreamContent(fs, fs.Length, progress);
-                content.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
+            using var content = new ProgressStreamContent(fs, fs.Length, progress);
+            content.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
 
-                using var resp = await SendAsync(HttpMethod.Put, url, content);
-                await EnsureSuccessOrThrowAsync(resp);
+            using var resp = await SendAsync(HttpMethod.Put, url, content);
+            await EnsureSuccessOrThrowAsync(resp);
 
-                await using var s = await resp.Content.ReadAsStreamAsync();
-                var doc = await JsonDocument.ParseAsync(s);
+            await using var s = await resp.Content.ReadAsStreamAsync();
+            var doc = await JsonDocument.ParseAsync(s);
 
-                return doc.RootElement.GetProperty("id").GetString() ?? "";
-            });
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            throw;
-        }
+            return doc.RootElement.GetProperty("id").GetString() ?? "";
+        });
     }
 
     private async Task<string> UploadLargeFileAsync(string localPath, string remotePath, IProgress<double>? progress)
@@ -183,7 +172,9 @@ public sealed class OneDriveService : ICloudStorageService, IDisposable
         // OneDrive recommends chunk sizes that are multiples of 320 KiB (327,680 bytes)
         // Using 3.2MB (10 * 320KB) for optimal upload performance
         // See: https://learn.microsoft.com/en-us/graph/api/driveitem-createuploadsession
-        const int chunkSize = 10 * 320 * 1024;
+        const int oneDriveRecommendedChunkUnit = 320 * 1024;
+        const int chunkMultiplier = 10;
+        const int chunkSize = chunkMultiplier * oneDriveRecommendedChunkUnit;
 
         var buffer = new byte[chunkSize];
         long uploaded = 0;

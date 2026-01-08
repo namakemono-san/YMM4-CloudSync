@@ -98,13 +98,12 @@ public class Plugin : IToolPlugin, IDisposable
 
     private static async Task CheckUpdateAsync()
     {
-        Console.WriteLine("[YMM4CS][Update] Checking for updates...");;
         var checker = new UpdateChecker();
         var info = await checker.CheckForUpdatesAsync();
         
         if (info != null)
         {
-            Application.Current.Dispatcher.Invoke(() =>
+            Application.Current?.Dispatcher.Invoke(() =>
             {
                 var window = new UpdateNotificationWindow(info);
                 window.ShowDialog();
