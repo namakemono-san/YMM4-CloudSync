@@ -36,7 +36,7 @@
 - 各種例外処理の改善
 その他
 - 動作確認済みバージョンを YukkuriMovieMaker v4.48.0.2 に更新
-- セキュリティ連絡先を `security@yuzunix.dev` に変更
+- セキュリティ連絡先を `support@yuzunix.dev` に変更
 
 ◆ v0.1.2 - 2026-01-05
 
