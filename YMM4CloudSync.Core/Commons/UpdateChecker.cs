@@ -55,6 +55,7 @@ public class UpdateChecker
         }
         catch (Exception ex)
         {
+            Console.WriteLine(ex);
             SentrySdk.CaptureException(ex);
         }
 
@@ -70,17 +71,18 @@ public class ReleaseInfo
     public string? HtmlUrl { get; set; }
 }
 
-public abstract class GitHubRelease
+// ReSharper disable once ClassNeverInstantiated.Global
+public record GitHubRelease
 {
     [JsonPropertyName("tag_name")]
-    public string? TagName { get; set; }
+    public string? TagName { get; init; }
 
     [JsonPropertyName("body")]
-    public string? Body { get; set; }
+    public string?  Body { get; init; }
 
     [JsonPropertyName("html_url")]
-    public string? HtmlUrl { get; set; }
+    public string? HtmlUrl { get; init; }
 
     [JsonPropertyName("prerelease")]
-    public bool Prerelease { get; set; }
+    public bool Prerelease { get; init; }
 }
