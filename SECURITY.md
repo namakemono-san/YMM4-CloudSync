@@ -8,7 +8,7 @@ If you discover a security vulnerability in YMM4 Cloud Sync, please report it pr
 
 Instead, report security issues by email:
 
-security@yuzunix.dev
+support@yuzunix.dev
 
 When reporting a security issue, please include:
 
