@@ -75,6 +75,16 @@
                          HorizontalContentAlignment="Stretch"
                          ContextMenu="{StaticResource ProjectContextMenu}"
                          MouseDoubleClick="OnListDoubleClick">
+                    <ListBox.Style>
+                        <Style TargetType="ListBox">
+                            <Setter Property="Visibility" Value="Visible"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding SelectedCloudService.Value.IsConnected}" Value="False">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </ListBox.Style>
                     <ListBox.ItemTemplate>
                         <DataTemplate>
                             <DockPanel Margin="2">
@@ -102,6 +112,36 @@
                         </DataTemplate>
                     </ListBox.ItemTemplate>
                 </ListBox>
+
+                <StackPanel Grid.Row="1" 
+                            HorizontalAlignment="Center" 
+                            VerticalAlignment="Center">
+                    <StackPanel.Style>
+                        <Style TargetType="StackPanel">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding SelectedCloudService.Value.IsConnected}" Value="False">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </StackPanel.Style>
+                    
+                    <iconPacks:PackIconMaterial Kind="CloudOffOutline" 
+                                                Width="48" Height="48" 
+                                                HorizontalAlignment="Center"
+                                                Foreground="Gray"
+                                                Margin="0,0,0,10"/>
+                    <TextBlock Text="未連携です" 
+                               FontSize="16" 
+                               FontWeight="Bold"
+                               HorizontalAlignment="Center"
+                               Foreground="Gray"/>
+                    <TextBlock Text="「連携」タブからサインインしてください" 
+                               Margin="0,5,0,0"
+                               HorizontalAlignment="Center"
+                               Foreground="Gray"/>
+                </StackPanel>
 
                 <StackPanel Grid.Row="2" x:Name="ProgressPanel" Visibility="Collapsed" Margin="0,0,0,10">
                     <TextBlock x:Name="ProgressText" Text="処理中..." Margin="0,0,0,5"/>

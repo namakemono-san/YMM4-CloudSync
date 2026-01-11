@@ -9,17 +9,16 @@ public sealed class CloudServiceItem(ICloudStorageService service) : INotifyProp
     public ICloudStorageService Service { get; } = service;
     public string Name => Service.ServiceName;
 
-    bool _isConnected;
     public bool IsConnected
     {
-        get => _isConnected;
+        get;
         set
         {
-            if (_isConnected == value) return;
-            _isConnected = value;
+            if (field == value) return;
+            field = value;
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsConnected)));
         }
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
-}
+}
