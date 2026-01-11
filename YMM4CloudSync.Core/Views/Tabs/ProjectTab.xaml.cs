@@ -140,15 +140,18 @@ public partial class ProjectTab : UserControl
     private async Task OpenProjectAsync(CloudFile file)
     {
         if (_isProcessing || ViewModel?.SelectedCloudService.Value?.Service is not { } svc) return;
+        if (ViewModel?.Settings == null) return;
 
         _isProcessing = true;
         SetProcessingState(true, "ダウンロード中...");
 
         try
         {
-            var tempDir = Path.Combine(Path.GetTempPath(), "YMM4CloudSync");
-            Directory.CreateDirectory(tempDir);
-            var tempPath = Path.Combine(tempDir, file.Name);
+            var cacheDir = PathHelper.ResolvePath(ViewModel.Settings.CacheDirectory);
+            if (string.IsNullOrEmpty(cacheDir)) cacheDir = Path.GetTempPath();
+            Directory.CreateDirectory(cacheDir);
+
+            var tempPath = Path.Combine(cacheDir, file.Name);
 
             var progress = new Progress<double>(p =>
             {
@@ -160,9 +163,14 @@ public partial class ProjectTab : UserControl
 
             SetProcessingState(true, "展開中...");
 
-            var appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            var projectRootDir = PathHelper.ResolvePath(ViewModel.Settings.ProjectDirectory);
+            if (string.IsNullOrEmpty(projectRootDir))
+            {
+                projectRootDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "YMM4CloudSync", "Projects");
+            }
+            
             var projectName = Path.GetFileNameWithoutExtension(file.Name);
-            var outputDir = Path.Combine(appData, "YMM4CloudSync", "Projects", projectName);
+            var outputDir = Path.Combine(projectRootDir, projectName);
 
             var result = await Task.Run(() => YmmxExtractor.Extract(tempPath, outputDir));
 
@@ -243,8 +251,12 @@ public partial class ProjectTab : UserControl
             }
 
             var projectName = Path.GetFileNameWithoutExtension(ymmpPath);
-            var tempYmmxPath = Path.Combine(Path.GetTempPath(), $"{projectName}.ymmx");
+            var cacheDir = PathHelper.ResolvePath(ViewModel.Settings.CacheDirectory);
+            if (string.IsNullOrEmpty(cacheDir)) cacheDir = Path.GetTempPath();
+            Directory.CreateDirectory(cacheDir);
 
+            var tempYmmxPath = Path.Combine(cacheDir, $"{projectName}.ymmx");
+            
             SetProcessingState(true, "パッケージ作成中...");
             
             var packProgress = new Progress<double>(p =>
