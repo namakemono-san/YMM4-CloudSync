@@ -29,6 +29,21 @@ public class GoogleDriveService : ICloudStorageService, IDisposable
 
     public async Task<bool> AuthenticateAsync()
     {
+        if (!Directory.Exists(CredentialPath) || !Directory.EnumerateFileSystemEntries(CredentialPath).Any())
+        {
+            return false;
+        }
+        
+        return await AuthenticateCoreAsync();
+    }
+
+    public async Task<bool> AuthenticateInteractiveAsync()
+    {
+        return await AuthenticateCoreAsync();
+    }
+    
+    private async Task<bool> AuthenticateCoreAsync()
+    {
         CancellationTokenSource? cts = null;
 
         try

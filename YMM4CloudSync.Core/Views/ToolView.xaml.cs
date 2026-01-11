@@ -167,13 +167,13 @@ public partial class ToolView
             }
             else
             {
-                bool ok;
-                
-                if (item.Service is OneDriveService one)
-                    ok = await one.AuthenticateInteractiveAsync();
-                else
-                    ok = await item.Service.AuthenticateAsync();
-                
+                var ok = item.Service switch
+                {
+                    OneDriveService one => await one.AuthenticateInteractiveAsync(),
+                    GoogleDriveService gDrive => await gDrive.AuthenticateInteractiveAsync(),
+                    _ => await item.Service.AuthenticateAsync()
+                };
+
                 item.IsConnected = ok && item.Service.IsAuthenticated;
 
                 if (SelectedCloudService.Value == item && item.IsConnected)
