@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
+using System.Net.Http;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -108,6 +109,14 @@ public partial class ProjectTab : UserControl
             var files = await svc.ListFilesAsync();
             var ymmxFiles = files.Where(f => f.Name.EndsWith(".ymmx", StringComparison.OrdinalIgnoreCase)).ToList();
             CloudFilesList.ItemsSource = ymmxFiles;
+        }
+        catch (OperationCanceledException)
+        {
+            Debug.WriteLine("通信がキャンセルまたはタイムアウトしました。");
+        }
+        catch (HttpRequestException ex) when (ex.InnerException is IOException)
+        {
+            Debug.WriteLine($"通信エラー: {ex.Message}");
         }
         catch (Exception ex)
         {
