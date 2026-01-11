@@ -30,9 +30,6 @@ public class ExtractResult
 
 public static class YmmxExtractor
 {
-    // Buffer size for file operations (80KB for optimal disk I/O)
-    private const int FileBufferSize = 81920;
-    
     public static ExtractResult Extract(
         string ymmxPath,
         string outputDirectory,
@@ -41,6 +38,8 @@ public static class YmmxExtractor
         if (!File.Exists(ymmxPath))
             throw new FileNotFoundException("ymmx ファイルが見つかりません。", ymmxPath);
 
+        CheckDiskSpace(ymmxPath, outputDirectory);
+        
         var newMeta = ReadMetaFromZip(ymmxPath);
 
         if (newMeta != null)
@@ -100,19 +99,20 @@ public static class YmmxExtractor
         }
         catch (IOException ex)
         {
+            if (DiskSpaceHelper.IsDiskFull(ex))
+            {
+                throw new IOException("展開中にディスクの空き領域がなくなりました。\n空き容量を確保してから再試行してください。", ex);
+            }
             throw new InvalidOperationException($"展開に失敗しました: {ex.Message}", ex);
         }
 
         var hashMismatch = false;
-        // Verify file integrity using hash
         if (newMeta?.Hash != null)
         {
             var actualHash = ComputeContentHash(finalOutputDir);
         
             if (!string.Equals(newMeta.Hash, actualHash, StringComparison.OrdinalIgnoreCase))
             {
-                // Try legacy hash computation for backward compatibility with older YMMX files
-                // Legacy version included Thumbs.db and .DS_Store files in hash calculation
                 var legacyHash = ComputeLegacyContentHashSafely(finalOutputDir);
             
                 if (!string.Equals(newMeta.Hash, legacyHash, StringComparison.OrdinalIgnoreCase))
@@ -293,5 +293,20 @@ public static class YmmxExtractor
         {
             throw new IOException($"バックアップの作成に失敗しました。\n{ex.Message}", ex);
         }
+    }
+    
+    private static void CheckDiskSpace(string ymmxPath, string outputDir)
+    {
+        long totalSize = 0;
+        try
+        {
+            using var archive = ZipFile.OpenRead(ymmxPath);
+            totalSize = archive.Entries.Sum(e => e.Length);
+        }
+        catch { /* ignore */ }
+
+        var required = totalSize + 20 * 1024 * 1024;
+        
+        DiskSpaceHelper.EnsureFreeSpace(outputDir, required, "展開先");
     }
 }

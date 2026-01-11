@@ -75,7 +75,12 @@ public static class YmmxPacker
             
             packList.Sort((a, b) => StringComparer.Ordinal.Compare(a.RelativeDest, b.RelativeDest));
             
-            var totalBytes = packList.Sum(f => new FileInfo(f.Source).Length) * 2; // Hash + Zip
+            var totalContentSize = packList.Sum(f => new FileInfo(f.Source).Length);
+            var required = totalContentSize + 20 * 1024 * 1024;
+            
+            DiskSpaceHelper.EnsureFreeSpace(outputYmmxPath, required);
+            
+            var totalBytes = packList.Sum(f => new FileInfo(f.Source).Length) * 2;
             long processedBytes = 0;
             
             var contentHash = ComputeContentHashFromList(packList, progress, totalBytes, ref processedBytes);
