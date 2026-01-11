@@ -1,7 +1,7 @@
 ﻿using System.IO;
 using System.Security.Cryptography;
 
-namespace YMM4CloudSync.Core.Commons;
+namespace YMM4CloudSync.Core.Commons.Security;
 
 public static class SecureStorageHelper
 {

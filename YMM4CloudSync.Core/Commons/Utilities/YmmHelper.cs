@@ -2,7 +2,7 @@
 using System.Windows;
 using Microsoft.Win32;
 
-namespace YMM4CloudSync.Core.Commons;
+namespace YMM4CloudSync.Core.Commons.Utilities;
 
 public enum SaveResult
 {

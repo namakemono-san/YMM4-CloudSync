@@ -1,8 +1,8 @@
-﻿using Google.Apis.Util.Store;
-using System.IO;
+﻿using System.IO;
 using System.Text.Json;
+using Google.Apis.Util.Store;
 
-namespace YMM4CloudSync.Core.Commons;
+namespace YMM4CloudSync.Core.Commons.Security;
 
 public class EncryptedFileDataStore : IDataStore
 {

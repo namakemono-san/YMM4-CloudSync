@@ -1,7 +1,7 @@
 ﻿using System.Diagnostics;
 using System.Reflection;
 using System.Windows;
-using YMM4CloudSync.Core.Commons;
+using YMM4CloudSync.Core.Commons.Network;
 
 namespace YMM4CloudSync.Core.Views;
 

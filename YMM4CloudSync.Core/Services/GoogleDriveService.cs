@@ -4,6 +4,8 @@ using Google.Apis.Services;
 using Google.Apis.Util.Store;
 using System.IO;
 using YMM4CloudSync.Core.Commons;
+using YMM4CloudSync.Core.Commons.Network;
+using YMM4CloudSync.Core.Commons.Security;
 
 namespace YMM4CloudSync.Core.Services;
 

@@ -2,7 +2,9 @@ using System.Diagnostics;
 using System.IO;
 using System.Text.Json;
 using System.Windows;
-using YMM4CloudSync.Core.Commons;
+using YMM4CloudSync.Core.Commons.Configuration;
+using YMM4CloudSync.Core.Commons.Network;
+using YMM4CloudSync.Core.Commons.Utilities;
 using YMM4CloudSync.Core.Views;
 using YukkuriMovieMaker.Plugin;
 
@@ -24,8 +26,8 @@ public class Plugin : IToolPlugin, IDisposable
 
     public Plugin()
     {
-        var settings = LoadSettings();
-        var sentrySettings = settings.Sentry;
+        var settings = SettingsManager.Load();
+        var sentrySettings = LoadSettings().Sentry;
     
         _sentryGuard = SentrySdk.Init(o =>
         {
@@ -36,8 +38,8 @@ public class Plugin : IToolPlugin, IDisposable
 
         CheckFileAssociation();
         Task.Run(CleanUpTempFiles);
-        
-        if (settings.Update.EnableUpdateCheck)
+
+        if (settings.EnableUpdateCheck)
         {
             Task.Run(CheckUpdateAsync);
         }
@@ -150,7 +152,6 @@ public class Plugin : IToolPlugin, IDisposable
 internal class AppSettings
 {
     public SentrySettings Sentry { get; init; } = new();
-    public UpdateSettings Update { get; init; } = new();
 }
 
 internal class SentrySettings
@@ -158,9 +159,4 @@ internal class SentrySettings
     public string Dsn { get; set; } = "";
     public string Release { get; set; } = "ymm4-cloudsync@1.0.0";
     public bool SendDefaultPii { get; set; } = false;
-}
-
-internal class UpdateSettings
-{
-    public bool EnableUpdateCheck { get; set; } = true;
 }

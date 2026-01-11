@@ -1,7 +1,7 @@
 ﻿using System.ComponentModel;
 using YMM4CloudSync.Core.Services;
 
-namespace YMM4CloudSync.Core.Views;
+namespace YMM4CloudSync.Core.Commons.Utilities;
 
 public sealed class CloudServiceItem(ICloudStorageService service) : INotifyPropertyChanged
 {

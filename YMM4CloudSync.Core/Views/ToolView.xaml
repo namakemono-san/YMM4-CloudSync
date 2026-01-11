@@ -14,7 +14,11 @@
         <TabItem Header="連携">
             <tabs:ConnectionTab />
         </TabItem>
-
+        
+        <TabItem Header="設定">
+            <tabs:SettingsTab />
+        </TabItem>
+        
         <TabItem Header="情報">
             <tabs:InformationTab />
         </TabItem>

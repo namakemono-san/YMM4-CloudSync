@@ -1,15 +1,25 @@
 using System.Collections.ObjectModel;
 using System.IO;
+using System.Reactive.Linq;
 using System.Reflection;
+using System.Windows.Forms;
 using Reactive.Bindings;
+using Reactive.Bindings.Extensions;
+using YMM4CloudSync.Core.Commons.Configuration;
 using YMM4CloudSync.Core.Commons.License;
+using YMM4CloudSync.Core.Commons.Utilities;
+using YMM4CloudSync.Core.Models;
 using YMM4CloudSync.Core.Services;
-using YMM4CloudSync.Core.Views;
+using YukkuriMovieMaker.Commons;
 
 namespace YMM4CloudSync.Core.ViewModels;
 
 public class ToolViewModel : IDisposable
 {
+    private readonly System.Reactive.Disposables.CompositeDisposable _disposables = new();
+
+    public UserSettings Settings { get; }
+    
     public ObservableCollection<CloudServiceItem> CloudServices { get; } = [];
     public ReactiveProperty<CloudServiceItem?> SelectedCloudService { get; } = new();
     
@@ -17,17 +27,92 @@ public class ToolViewModel : IDisposable
     public string ChangelogText { get; private set; } = "";
     public ObservableCollection<LicenseTextViewModel> Licenses { get; } = [];
     public ReactiveProperty<LicenseTextViewModel?> CurrentLicense { get; } = new();
+    
+    public ReactiveProperty<string> ProjectDirectory { get; }
+    public ReactiveProperty<string> CacheDirectory { get; }
+    
+    public ReadOnlyReactivePropertySlim<string?> ProjectDirectoryPreview { get; }
+    public ReadOnlyReactivePropertySlim<string?> CacheDirectoryPreview { get; }
 
+    public ReactiveCommand BrowseProjectDirCommand { get; }
+    public ReactiveCommand BrowseCacheDirCommand { get; }
+    public ReactiveCommand ResetProjectDirCommand { get; }
+    public ReactiveCommand ResetCacheDirCommand { get; }
+    
+    private static string DefaultProjectDir => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "YMM4CloudSync", "Projects");
+
+    private static string DefaultCacheDir => Path.Combine(
+        Path.GetTempPath(), "YMM4CloudSync");
+    
     public ToolViewModel()
     {
+        Settings = SettingsManager.Load();
+        Settings.PropertyChanged += (_, _) => SettingsManager.Save(Settings);
+        
         CloudServices.Add(new CloudServiceItem(new GoogleDriveService()));
         CloudServices.Add(new CloudServiceItem(new OneDriveService()));
         
         SelectedCloudService.Value = CloudServices.FirstOrDefault();
+        SelectedCloudService.AddTo(_disposables);
 
         LoadVersionInfo();
         LoadChangelog();
         LoadLicense();
+        CurrentLicense.AddTo(_disposables);
+
+        ProjectDirectory = new ReactiveProperty<string>(Settings.ProjectDirectory)
+            .AddTo(_disposables);
+        
+        CacheDirectory = new ReactiveProperty<string>(Settings.CacheDirectory)
+            .AddTo(_disposables);
+
+        ProjectDirectory.Subscribe(x => 
+        {
+            Settings.ProjectDirectory = x;
+            SettingsManager.Save(Settings);
+        }).AddTo(_disposables);
+
+        CacheDirectory.Subscribe(x => 
+        {
+            Settings.CacheDirectory = x;
+            SettingsManager.Save(Settings);
+        }).AddTo(_disposables);
+
+        ProjectDirectoryPreview = ProjectDirectory
+            .Select(ReplaceSpecialTags)
+            .ToReadOnlyReactivePropertySlim()
+            .AddTo(_disposables);
+
+        CacheDirectoryPreview = CacheDirectory
+            .Select(ReplaceSpecialTags)
+            .ToReadOnlyReactivePropertySlim()
+            .AddTo(_disposables);
+
+        BrowseProjectDirCommand = new ReactiveCommand()
+            .WithSubscribe(() => 
+            {
+                var path = SelectFolder("プロジェクト保存先を選択", ProjectDirectory.Value);
+                if (!string.IsNullOrEmpty(path)) ProjectDirectory.Value = path;
+            })
+            .AddTo(_disposables);
+
+        BrowseCacheDirCommand = new ReactiveCommand()
+            .WithSubscribe(() => 
+            {
+                var path = SelectFolder("キャッシュ保存先を選択", CacheDirectory.Value);
+                if (!string.IsNullOrEmpty(path)) CacheDirectory.Value = path;
+            })
+            .AddTo(_disposables);
+
+        ResetProjectDirCommand = new ReactiveCommand()
+            .WithSubscribe(() => ProjectDirectory.Value = DefaultProjectDir)
+            .AddTo(_disposables);
+
+        ResetCacheDirCommand = new ReactiveCommand()
+            .WithSubscribe(() => CacheDirectory.Value = DefaultCacheDir)
+            .AddTo(_disposables);
     }
     
     public async Task TryAutoConnectAsync()
@@ -82,10 +167,48 @@ public class ToolViewModel : IDisposable
         CurrentLicense.Value = Licenses.FirstOrDefault();
     }
 
+    private static string ReplaceSpecialTags(string? rawPath)
+    {
+        if (string.IsNullOrWhiteSpace(rawPath)) return "";
+
+        try
+        {
+            var path = rawPath
+                .Replace("<YMMUserDir>", AppDirectories.UserDirectory)
+                .Replace("<Desktop>", Environment.GetFolderPath(Environment.SpecialFolder.Desktop))
+                .Replace("<Documents>", Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments));
+
+            return path;
+        }
+        catch
+        {
+            return rawPath;
+        }
+    }
+
+    private static string? SelectFolder(string description, string? initialPath)
+    {
+        using var dialog = new FolderBrowserDialog();
+        dialog.Description = description;
+        dialog.UseDescriptionForTitle = true;
+        dialog.ShowNewFolderButton = true;
+
+        if (string.IsNullOrEmpty(initialPath))
+            return dialog.ShowDialog() == DialogResult.OK ? dialog.SelectedPath : null;
+        
+        var resolvedPath = ReplaceSpecialTags(initialPath);
+        if (Directory.Exists(resolvedPath))
+        {
+            dialog.SelectedPath = resolvedPath;
+        }
+
+        return dialog.ShowDialog() == DialogResult.OK ? dialog.SelectedPath : null;
+    }
+
     public void Dispose()
     {
-        SelectedCloudService.Dispose();
-        CurrentLicense.Dispose();
+        _disposables.Dispose();
+
         foreach(var s in CloudServices)
         {
             if (s.Service is IDisposable d) d.Dispose();

@@ -1,7 +1,7 @@
 ﻿using System.Windows;
 using YMM4CloudSync.Core.Views;
 
-namespace YMM4CloudSync.Core.Commons;
+namespace YMM4CloudSync.Core.Commons.Utilities;
 
 public static class ErrorReporter
 {

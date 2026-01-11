@@ -4,7 +4,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using HttpClient = System.Net.Http.HttpClient;
 
-namespace YMM4CloudSync.Core.Commons;
+namespace YMM4CloudSync.Core.Commons.Network;
 
 public class UpdateChecker
 {

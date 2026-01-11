@@ -2,7 +2,7 @@ using System.IO;
 using System.Net;
 using System.Net.Http;
 
-namespace YMM4CloudSync.Core.Commons;
+namespace YMM4CloudSync.Core.Commons.Network;
 
 public static class RetryHelper
 {
