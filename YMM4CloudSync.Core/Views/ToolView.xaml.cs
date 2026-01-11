@@ -50,11 +50,9 @@ public partial class ToolView
             {
                 CloudFilesList.ItemsSource = null;
 
-                var ok = IsConnected;
-                UploadButton.IsEnabled = ok;
-                RefreshButton.IsEnabled = ok;
+                UpdateUiState();
 
-                if (ok)
+                if (IsConnected)
                     await RefreshFileListAsync();
             }
             catch (Exception ex)
@@ -136,14 +134,19 @@ public partial class ToolView
             }
         }
 
-        var connected = IsConnected;
-        UploadButton.IsEnabled = connected;
-        RefreshButton.IsEnabled = connected;
+        UpdateUiState();
         
         if (IsConnected)
             await RefreshFileListAsync();
     }
 
+    private void UpdateUiState()
+    {
+        var connected = IsConnected;
+        UploadButton.IsEnabled = connected;
+        RefreshButton.IsEnabled = connected;
+    }
+    
     private async void OnServiceToggleClick(object sender, RoutedEventArgs e)
     {
         if (_isProcessing) return;
@@ -162,8 +165,9 @@ public partial class ToolView
                 await item.Service.LogoutAsync();
                 item.IsConnected = false;
 
-                if (SelectedCloudService.Value == item)
-                    CloudFilesList.ItemsSource = null;
+                if (SelectedCloudService.Value != item) return;
+                
+                CloudFilesList.ItemsSource = null;
             }
             else
             {
@@ -176,9 +180,12 @@ public partial class ToolView
 
                 item.IsConnected = ok && item.Service.IsAuthenticated;
 
-                if (SelectedCloudService.Value == item && item.IsConnected)
-                    await RefreshFileListAsync();
+                if (SelectedCloudService.Value != item || !item.IsConnected) return;
+
+                await RefreshFileListAsync();
             }
+
+            UpdateUiState();
         }
         catch (Exception ex)
         {
