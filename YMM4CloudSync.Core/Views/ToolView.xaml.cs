@@ -439,12 +439,19 @@ public partial class ToolView
 
         try
         {
-            var saved = YmmHelper.SaveProject();
-            if (!saved)
+            var saveResult = YmmHelper.SaveProject();
+            
+            switch (saveResult)
             {
-                MessageBox.Show("プロジェクトの保存に失敗しました。", "エラー",
-                    MessageBoxButton.OK, MessageBoxImage.Error);
-                return;
+                case SaveResult.Cancelled:
+                    return;
+                case SaveResult.Failed:
+                    MessageBox.Show("プロジェクトの保存に失敗しました。", "エラー",
+                        MessageBoxButton.OK, MessageBoxImage.Error);
+                    return;
+                case SaveResult.Success:
+                default:
+                    break;
             }
 
             var ymmpPath = YmmHelper.GetCurrentProjectPath();

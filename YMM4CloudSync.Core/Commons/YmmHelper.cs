@@ -4,6 +4,13 @@ using Microsoft.Win32;
 
 namespace YMM4CloudSync.Core.Commons;
 
+public enum SaveResult
+{
+    Success,
+    Cancelled,
+    Failed
+}
+
 public static class YmmHelper
 {
     private const string MainViewTypeName = "YukkuriMovieMaker.Views.MainView";
@@ -35,13 +42,13 @@ public static class YmmHelper
         return ExtractValue<string>(filePathValue);
     }
 
-    public static bool SaveProject(string? path = null)
+    public static SaveResult SaveProject(string? path = null)
     {
         try
         {
             var dataContext = GetMainWindowDataContext();
             if (dataContext == null)
-                return false;
+                return SaveResult.Failed;
 
             var vmType = dataContext.GetType();
             var currentPath = path ?? GetCurrentProjectPath();
@@ -56,21 +63,22 @@ public static class YmmHelper
                 };
 
                 if (saveDialog.ShowDialog() != true)
-                    return false;
+                    return SaveResult.Cancelled;
 
                 currentPath = saveDialog.FileName;
             }
 
             var saveMethod = vmType.GetMethod("SaveProject", BindingFlags.Public | BindingFlags.Instance);
             if (saveMethod == null)
-                return false;
+                return SaveResult.Failed;
 
             saveMethod.Invoke(dataContext, [currentPath]);
-            return true;
+            return SaveResult.Success;
         }
-        catch
+        catch (Exception ex)
         {
-            return false;
+            SentrySdk.CaptureException(ex);
+            return SaveResult.Failed;
         }
     }
 
@@ -91,4 +99,4 @@ public static class YmmHelper
         if (innerValue is T typedValue) return typedValue;
         return innerValue != null ? ExtractValue<T>(innerValue) : default;
     }
-}
+}
