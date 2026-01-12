@@ -20,6 +20,19 @@ public class DropboxService : ICloudStorageService, IDisposable
     private const string RedirectUri = "http://127.0.0.1:52475/authorize";
     
     private const string TokenCachePath = "dropbox_token_cache.bin";
+    
+    /// <summary>
+    /// Dropbox upload limit for simple upload.
+    /// Files larger than 150MB should use chunked upload session.
+    /// See: https://www.dropbox.com/developers/documentation/http/documentation#files-upload
+    /// </summary>
+    private const long UploadLimitBytes = 150 * 1024 * 1024; // 150MB
+    
+    /// <summary>
+    /// Chunk size for uploading large files to Dropbox.
+    /// Recommended size is between 4MB-150MB for optimal performance.
+    /// </summary>
+    private const int ChunkSizeBytes = 8 * 1024 * 1024; // 8MB
 
     private static string GetTokenPath() => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -50,6 +63,7 @@ public class DropboxService : ICloudStorageService, IDisposable
         }
         catch (Exception ex)
         {
+            SentrySdk.CaptureException(ex);
             Debug.WriteLine($"[Dropbox] Silent auth failed: {ex.Message}");
             _client?.Dispose();
             _client = null;
@@ -170,9 +184,8 @@ public class DropboxService : ICloudStorageService, IDisposable
         var uploadPath = NormalizePathForApi(remotePath);
         
         var fileInfo = new FileInfo(localPath);
-        const long uploadLimit = 150 * 1024 * 1024;
 
-        if (fileInfo.Length > uploadLimit)
+        if (fileInfo.Length > UploadLimitBytes)
         {
             return await UploadLargeFileAsync(localPath, uploadPath, fileInfo.Length, progress);
         }
@@ -182,14 +195,12 @@ public class DropboxService : ICloudStorageService, IDisposable
 
     private async Task<string> UploadLargeFileAsync(string localPath, string remotePath, long totalSize, IProgress<double>? progress)
     {
-        const int chunkSize = 8 * 1024 * 1024;
-
         return await RetryHelper.ExecuteWithRetryAsync(async () =>
         {
             await using var stream = new FileStream(localPath, FileMode.Open, FileAccess.Read);
             
-            var chunk = new byte[chunkSize];
-            var read = await stream.ReadAsync(chunk.AsMemory(0, chunkSize));
+            var chunk = new byte[ChunkSizeBytes];
+            var read = await stream.ReadAsync(chunk.AsMemory(0, ChunkSizeBytes));
             
             UploadSessionStartResult sessionStartResult;
             using (var mem = new MemoryStream(chunk, 0, read))
@@ -202,7 +213,7 @@ public class DropboxService : ICloudStorageService, IDisposable
 
             while (uploaded < totalSize)
             {
-                var bytesToRead = (int)Math.Min(chunkSize, totalSize - uploaded);
+                var bytesToRead = (int)Math.Min(ChunkSizeBytes, totalSize - uploaded);
                 var bytesRead = await stream.ReadAsync(chunk.AsMemory(0, bytesToRead));
                 
                 if (bytesRead == 0) break;
@@ -277,7 +288,14 @@ public class DropboxService : ICloudStorageService, IDisposable
         catch
         {
             if (!File.Exists(tempPath)) throw;
-            try { File.Delete(tempPath); } catch { /* ignore */ }
+            try 
+            { 
+                File.Delete(tempPath); 
+            } 
+            catch (Exception ex)
+            { 
+                Debug.WriteLine($"[Dropbox] Failed to delete temporary file: {ex.Message}");
+            }
             throw;
         }
     }

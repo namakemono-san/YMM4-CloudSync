@@ -1,4 +1,5 @@
-﻿using Google.Apis.Auth.OAuth2;
+﻿using System.Diagnostics;
+using Google.Apis.Auth.OAuth2;
 using Google.Apis.Drive.v3;
 using Google.Apis.Services;
 using Google.Apis.Util.Store;
@@ -88,16 +89,17 @@ public class GoogleDriveService : ICloudStorageService, IDisposable
                 if (Directory.Exists(CredentialPath))
                     Directory.Delete(CredentialPath, true);
             }
-            catch
+            catch (Exception ex2)
             {
-                // ignored
+                Debug.WriteLine($"[GoogleDrive] Failed to delete credential directory: {ex2.Message}");
             }
 
             _driveService?.Dispose();
             _driveService = null;
             _appFolderId = null;
 
-            System.Diagnostics.Debug.WriteLine($"[GoogleDrive] Auth error: {ex.Message}");
+            SentrySdk.CaptureException(ex);
+            Debug.WriteLine($"[GoogleDrive] Auth error: {ex.Message}");
             return false;
         }
         finally

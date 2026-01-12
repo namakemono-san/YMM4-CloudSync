@@ -19,8 +19,9 @@ public static class SettingsManager
             var json = File.ReadAllText(SettingsPath);
             return JsonSerializer.Deserialize<UserSettings>(json) ?? new UserSettings();
         }
-        catch
+        catch (Exception ex)
         {
+            SentrySdk.CaptureException(ex);
             return new UserSettings();
         }
     }
