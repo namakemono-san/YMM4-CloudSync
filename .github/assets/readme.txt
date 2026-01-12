@@ -10,13 +10,16 @@ YMM4 Cloud Sync は、YukkuriMovieMaker4（以下、YMM4）のプロジェクト
 - プロジェクトのダウンロード・削除
 - クラウド上のプロジェクトを直接開いて編集
 
-現在対応しているサービスはGoogle DriveとOneDriveのみになります。
+現在対応しているサービスは以下の通りになります。
+- Google Drive
+- Dropbox
+- OneDrive
 ※ 今後、対応クラウドサービスの追加を予定しています。
 
 ■ 動作確認済みバージョン
 
-- YukkuriMovieMaker v4.48.0.3
-- YukkuriMovieMaker v4.48.0.3 Lite
+- YukkuriMovieMaker v4.48.0.5
+- YukkuriMovieMaker v4.48.0.5 Lite
 
 ■ 前提条件
 
