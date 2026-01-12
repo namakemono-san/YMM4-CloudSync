@@ -4,87 +4,71 @@
 
 This document provides actionable recommendations from the comprehensive code review. See [CODE_REVIEW_FINDINGS.md](./CODE_REVIEW_FINDINGS.md) for detailed analysis.
 
-## Priority 1 - Critical (Recommended for immediate action)
+> **Status Update (2026-01-12):** Priority 1-2 recommendations have been implemented in commit `455abb8`.
 
-### 1. Improve Exception Logging
+## ✅ Priority 1 - COMPLETED
 
-**Files affected:** GoogleDriveService.cs, YmmxPacker.cs, DropboxService.cs, and others
+### 1. Improve Exception Logging ✅ IMPLEMENTED
 
-**Current:**
-```csharp
-catch
-{
-    // ignored
-}
-```
+**Files affected:** GoogleDriveService.cs, YmmxPacker.cs, DropboxService.cs, YmmxExtractor.cs
 
-**Recommended:**
+**Implemented:**
 ```csharp
 catch (Exception ex)
 {
-    Debug.WriteLine($"[Context] Error: {ex.Message}");
-    // or for non-critical paths:
-    SentrySdk.CaptureException(ex);
+    System.Diagnostics.Debug.WriteLine($"[Context] Error: {ex.Message}");
 }
 ```
 
-**Rationale:** Silent exception swallowing makes debugging extremely difficult.
+**Status:** All empty catch blocks now include Debug.WriteLine logging for easier debugging.
 
 ---
 
-## Priority 2 - Important (Should address soon)
+## ✅ Priority 2 - COMPLETED
 
-### 2. Extract Magic Numbers to Constants
+### 2. Extract Magic Numbers to Constants ✅ IMPLEMENTED
 
-**Files affected:** OneDriveService.cs, DropboxService.cs, YmmxPacker.cs
+**Files affected:** OneDriveService.cs, DropboxService.cs, YmmxPacker.cs, YmmxExtractor.cs
 
-**Current:**
-```csharp
-const long chunkThreshold = 4 * 1024 * 1024;
-```
-
-**Recommended:**
+**Implemented:**
 ```csharp
 // At class level with documentation
 /// <summary>
 /// OneDrive recommends chunk sizes above this threshold for optimal upload.
 /// Files smaller than 4MB can be uploaded in a single request.
+/// See: https://learn.microsoft.com/en-us/graph/api/driveitem-createuploadsession
 /// </summary>
 private const long ChunkThresholdBytes = 4 * 1024 * 1024; // 4MB
 ```
 
-**Rationale:** Improves code maintainability and makes intent clear.
+**Status:** All magic numbers extracted to well-documented constants:
+- `OneDriveService`: `ChunkThresholdBytes` (4MB)
+- `DropboxService`: `UploadLimitBytes` (150MB), `ChunkSizeBytes` (8MB)
+- `YmmxPacker`: `ExtraSpaceReserveBytes` (20MB)
+- `YmmxExtractor`: `ExtraSpaceReserveBytes` (20MB)
 
 ---
 
-### 3. Document Sentry DSN in Configuration
+### 3. Document Sentry DSN in Configuration ✅ IMPLEMENTED
 
-**File:** appsettings.json
+**File:** README.md
 
-**Add a README section:**
-```markdown
-## Configuration
+**Implemented:** Added configuration section explaining:
+- Sentry DSN is intentionally public and safe
+- No PII is collected (SendDefaultPii: false)
+- Instructions to disable error reporting if desired
 
-### Sentry DSN
-The Sentry DSN in `appsettings.json` is intentionally public. Sentry DSNs are
-safe to expose in client applications and are required for error reporting.
-```
-
-**Rationale:** Clarifies intentional design decision.
+**Status:** Complete
 
 ---
 
-### 4. Remove Dead Code
+### 4. Remove Dead Code ✅ IMPLEMENTED
 
 **File:** YmmxPacker.cs, line 184
 
-**Current:**
-```csharp
-var subFolder = folder ?? "other";
-Path.Combine(assetsDir, subFolder);  // ← This does nothing
-```
+**Fixed:** Removed unused `Path.Combine(assetsDir, subFolder);` statement.
 
-**Fix:** Remove the unused line or assign to a variable if needed.
+**Status:** Complete
 
 ---
 
@@ -248,23 +232,21 @@ Using Windows `ProtectedData` with `CurrentUser` scope is appropriate for this W
 
 ---
 
-## Implementation Order
+## Implementation Status
 
-For teams looking to implement these recommendations:
+### ✅ Completed (Commit 455abb8)
 
-**Week 1:**
-- Remove dead code (Priority 2, Item 4)
-- Add exception logging to critical paths (Priority 1, Item 1)
+**Priority 1-2 items:**
+- ✅ Remove dead code (Priority 2, Item 4)
+- ✅ Add exception logging to critical paths (Priority 1, Item 1)
+- ✅ Extract magic numbers (Priority 2, Item 2)
+- ✅ Document Sentry DSN (Priority 2, Item 3)
 
-**Week 2:**  
-- Extract magic numbers (Priority 2, Item 2)
-- Document Sentry DSN (Priority 2, Item 3)
+### 🔄 Remaining Recommendations
 
-**Week 3-4:**
+**Priority 3 (Optional enhancements):**
 - Add unit tests for utilities (Priority 3, Item 5)
 - Consolidate temp file handling (Priority 3, Item 6)
-
-**Ongoing:**
 - Improve documentation (Priority 3, Items 7)
 - Enhance cleanup logic (Priority 3, Item 8)
 
@@ -280,3 +262,4 @@ For questions about these recommendations, please:
 ---
 
 *Last updated: January 12, 2026*
+*Priority 1-2 recommendations completed in commit 455abb8*
