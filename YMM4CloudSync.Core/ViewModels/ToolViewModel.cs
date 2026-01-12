@@ -53,6 +53,7 @@ public class ToolViewModel : IDisposable
         
         CloudServices.Add(new CloudServiceItem(new GoogleDriveService()));
         CloudServices.Add(new CloudServiceItem(new OneDriveService()));
+        CloudServices.Add(new CloudServiceItem(new DropboxService()));
         
         SelectedCloudService.Value = CloudServices.FirstOrDefault();
         SelectedCloudService.AddTo(_disposables);

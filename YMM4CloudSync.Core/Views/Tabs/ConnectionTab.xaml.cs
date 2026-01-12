@@ -1,6 +1,5 @@
 using System.Windows;
 using System.Windows.Controls;
-using YMM4CloudSync.Core.Commons;
 using YMM4CloudSync.Core.Commons.Utilities;
 using YMM4CloudSync.Core.Services;
 
@@ -36,6 +35,7 @@ public partial class ConnectionTab : UserControl
                 var ok = item.Service switch
                 {
                     OneDriveService one => await one.AuthenticateInteractiveAsync(),
+                    DropboxService dropbox => await dropbox.AuthenticateInteractiveAsync(),
                     GoogleDriveService gDrive => await gDrive.AuthenticateInteractiveAsync(),
                     _ => await item.Service.AuthenticateAsync()
                 };

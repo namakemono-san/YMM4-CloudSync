@@ -42,16 +42,18 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="Dropbox.Api" Version="7.0.0" />
+    
     <PackageReference Include="Google.Apis" Version="1.72.0" ExcludeAssets="runtime" />
 
     <PackageReference Include="Google.Apis.Auth" Version="1.72.0" ExcludeAssets="runtime" />
 
     <PackageReference Include="Google.Apis.Core" Version="1.72.0" ExcludeAssets="runtime" />
 
-    <PackageReference Include="MahApps.Metro.IconPacks.Material" Version="6.2.1" />
-
     <PackageReference Include="Microsoft.Identity.Client" Version="4.79.2" />
 
+    <PackageReference Include="MahApps.Metro.IconPacks.Material" Version="6.2.1" />
+    
     <PackageReference Include="ReactiveProperty.Core" Version="8.2.0" ExcludeAssets="runtime" />
     
     <PackageReference Include="ReactiveProperty" Version="8.2.0" ExcludeAssets="runtime" />
