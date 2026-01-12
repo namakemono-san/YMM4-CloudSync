@@ -23,6 +23,14 @@ public sealed class OneDriveService : ICloudStorageService, IDisposable
     private static readonly string TokenCachePath =
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "YMM4CloudSync", "onedrive_msal_cache.bin");
+    
+    /// <summary>
+    /// OneDrive recommends chunk sizes above this threshold for optimal upload.
+    /// Files smaller than 4MB can be uploaded in a single PUT request.
+    /// See: https://learn.microsoft.com/en-us/graph/api/driveitem-createuploadsession
+    /// </summary>
+    private const long ChunkThresholdBytes = 4 * 1024 * 1024; // 4MB
+    
     // Using Lock class (.NET 9+) for thread-safe token cache access
     // This ensures proper synchronization when multiple operations access the cache
     private static readonly Lock FileLock = new();
@@ -141,9 +149,8 @@ public sealed class OneDriveService : ICloudStorageService, IDisposable
             throw new FileNotFoundException("ファイルが見つかりません。", localPath);
 
         var fileInfo = new FileInfo(localPath);
-        const long chunkThreshold = 4 * 1024 * 1024;
 
-        if (fileInfo.Length > chunkThreshold)
+        if (fileInfo.Length > ChunkThresholdBytes)
         {
             return await UploadLargeFileAsync(localPath, remotePath, progress);
         }

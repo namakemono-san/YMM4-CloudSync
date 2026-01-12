@@ -88,9 +88,9 @@ public class GoogleDriveService : ICloudStorageService, IDisposable
                 if (Directory.Exists(CredentialPath))
                     Directory.Delete(CredentialPath, true);
             }
-            catch
+            catch (Exception ex)
             {
-                // ignored
+                System.Diagnostics.Debug.WriteLine($"[GoogleDrive] Failed to delete credential directory: {ex.Message}");
             }
 
             _driveService?.Dispose();

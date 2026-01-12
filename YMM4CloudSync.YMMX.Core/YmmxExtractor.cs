@@ -30,6 +30,12 @@ public class ExtractResult
 
 public static class YmmxExtractor
 {
+    /// <summary>
+    /// Extra space to reserve when checking disk space for YMMX extraction.
+    /// This accounts for decompression overhead and temporary files.
+    /// </summary>
+    private const long ExtraSpaceReserveBytes = 20 * 1024 * 1024; // 20MB
+    
     public static ExtractResult Extract(
         string ymmxPath,
         string outputDirectory,
@@ -303,9 +309,12 @@ public static class YmmxExtractor
             using var archive = ZipFile.OpenRead(ymmxPath);
             totalSize = archive.Entries.Sum(e => e.Length);
         }
-        catch { /* ignore */ }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[YmmxExtractor] Failed to read archive size: {ex.Message}");
+        }
 
-        var required = totalSize + 20 * 1024 * 1024;
+        var required = totalSize + ExtraSpaceReserveBytes;
         
         DiskSpaceHelper.EnsureFreeSpace(outputDir, required, "展開先");
     }

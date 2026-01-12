@@ -21,6 +21,12 @@ public static class YmmxPacker
 {
     private const int FileBufferSize = 81920;
     
+    /// <summary>
+    /// Extra space to reserve when checking disk space for YMMX archive creation.
+    /// This accounts for metadata, compression overhead, and temporary files.
+    /// </summary>
+    private const long ExtraSpaceReserveBytes = 20 * 1024 * 1024; // 20MB
+    
     private static readonly Dictionary<string, string> TypeToFolder = new()
     {
         { "YukkuriMovieMaker.Project.Items.VideoItem", "videos" },
@@ -76,7 +82,7 @@ public static class YmmxPacker
             packList.Sort((a, b) => StringComparer.Ordinal.Compare(a.RelativeDest, b.RelativeDest));
             
             var totalContentSize = packList.Sum(f => new FileInfo(f.Source).Length);
-            var required = totalContentSize + 20 * 1024 * 1024;
+            var required = totalContentSize + ExtraSpaceReserveBytes;
             
             DiskSpaceHelper.EnsureFreeSpace(outputYmmxPath, required);
             
@@ -128,7 +134,14 @@ public static class YmmxPacker
         {
             if (Directory.Exists(tempMetaDir))
             {
-                try { Directory.Delete(tempMetaDir, true); } catch { /* ignored */ }
+                try 
+                { 
+                    Directory.Delete(tempMetaDir, true); 
+                } 
+                catch (Exception ex)
+                { 
+                    System.Diagnostics.Debug.WriteLine($"[YmmxPacker] Failed to delete temporary directory: {ex.Message}");
+                }
             }
         }
     }
@@ -181,7 +194,6 @@ public static class YmmxPacker
                             else
                             {
                                 var subFolder = folder ?? "other";
-                                Path.Combine(assetsDir, subFolder);
                 
                                 if (!usedFileNames.TryGetValue(subFolder, out var usedNames))
                                 {
