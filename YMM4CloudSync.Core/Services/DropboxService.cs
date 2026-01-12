@@ -63,6 +63,7 @@ public class DropboxService : ICloudStorageService, IDisposable
         }
         catch (Exception ex)
         {
+            SentrySdk.CaptureException(ex);
             Debug.WriteLine($"[Dropbox] Silent auth failed: {ex.Message}");
             _client?.Dispose();
             _client = null;

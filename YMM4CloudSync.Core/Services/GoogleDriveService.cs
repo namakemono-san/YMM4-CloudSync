@@ -98,6 +98,7 @@ public class GoogleDriveService : ICloudStorageService, IDisposable
             _driveService = null;
             _appFolderId = null;
 
+            SentrySdk.CaptureException(ex);
             Debug.WriteLine($"[GoogleDrive] Auth error: {ex.Message}");
             return false;
         }

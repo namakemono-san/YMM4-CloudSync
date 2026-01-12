@@ -78,12 +78,17 @@ public class Plugin : IToolPlugin, IDisposable
         {
             var tempPath = Path.GetTempPath();
             var directories = Directory.GetDirectories(tempPath, "ymmx_*");
+            var cutoffTime = DateTime.Now.AddDays(-7);
 
             foreach (var dir in directories)
             {
                 try
                 {
-                    Directory.Delete(dir, true);
+                    var dirInfo = new DirectoryInfo(dir);
+                    if (dirInfo.CreationTime < cutoffTime)
+                    {
+                        Directory.Delete(dir, true);
+                    }
                 }
                 catch (Exception ex)
                 {
