@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
 using System.Security;
@@ -311,7 +312,7 @@ public static class YmmxExtractor
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"[YmmxExtractor] Failed to read archive size: {ex.Message}");
+            Debug.WriteLine($"[YmmxExtractor] Failed to read archive size: {ex.Message}");
         }
 
         var required = totalSize + ExtraSpaceReserveBytes;

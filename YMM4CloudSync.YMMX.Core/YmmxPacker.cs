@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
 using System.Security.Cryptography;
@@ -140,7 +141,7 @@ public static class YmmxPacker
                 } 
                 catch (Exception ex)
                 { 
-                    System.Diagnostics.Debug.WriteLine($"[YmmxPacker] Failed to delete temporary directory: {ex.Message}");
+                    Debug.WriteLine($"[YmmxPacker] Failed to delete temporary directory: {ex.Message}");
                 }
             }
         }
