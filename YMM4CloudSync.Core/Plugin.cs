@@ -35,9 +35,33 @@ public class Plugin : IToolPlugin, IDisposable
             o.Release = sentrySettings.Release;
             o.SendDefaultPii = sentrySettings.SendDefaultPii;
         });
-
+        
         CheckFileAssociation();
-        Task.Run(CleanUpTempFiles);
+
+        Task.Run(() =>
+        {
+            try
+            {
+                string? cacheDir = null;
+                try
+                {
+                    if (!string.IsNullOrWhiteSpace(settings?.CacheDirectory))
+                    {
+                        cacheDir = PathHelper.ResolvePath(settings.CacheDirectory);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"[YMM4CS][CleanUp] Failed to resolve cache directory: {ex.Message}");
+                }
+
+                CleanUpTempFiles(cacheDir);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[YMM4CS][CleanUp] Failed to start cleanup task: {ex.Message}");
+            }
+        });
 
         if (settings.EnableUpdateCheck)
         {
@@ -72,33 +96,50 @@ public class Plugin : IToolPlugin, IDisposable
         return new AppSettings();
     }
 
-    private static void CleanUpTempFiles()
+    private static void CleanUpTempFiles(string? additionalDir = null)
     {
         try
         {
-            var tempPath = Path.GetTempPath();
-            var directories = Directory.GetDirectories(tempPath, "ymmx_*");
             var cutoffTime = DateTime.Now.AddDays(-7);
 
-            foreach (var dir in directories)
+            static void ProcessBasePath(string basePath, DateTime cutoff)
             {
                 try
                 {
-                    var dirInfo = new DirectoryInfo(dir);
-                    if (dirInfo.CreationTime < cutoffTime)
+                    var directories = Directory.GetDirectories(basePath, "ymmx_*", SearchOption.TopDirectoryOnly);
+                    foreach (var dir in directories)
                     {
-                        Directory.Delete(dir, true);
+                        try
+                        {
+                            var dirInfo = new DirectoryInfo(dir);
+                            if (dirInfo.CreationTime < cutoff)
+                            {
+                                Directory.Delete(dir, true);
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Debug.WriteLine($"[YMM4CS][CleanUp] Failed to delete temp directory {dir}: {ex.Message}");
+                        }
                     }
                 }
                 catch (Exception ex)
                 {
-                    Debug.WriteLine($"[YMM4CS][CleanUp] Failed to delete temp directory {dir}: {ex.Message}");
+                    Debug.WriteLine($"[YMM4CS][CleanUp] Failed to enumerate directories in {basePath}: {ex.Message}");
                 }
+            }
+
+            var tempPath = Path.GetTempPath();
+            ProcessBasePath(tempPath, cutoffTime);
+
+            if (!string.IsNullOrWhiteSpace(additionalDir) && Directory.Exists(additionalDir))
+            {
+                ProcessBasePath(additionalDir, cutoffTime);
             }
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"[YMM4CS][CleanUp] Failed to enumerate temp directories: {ex.Message}");
+            Debug.WriteLine($"[YMM4CS][CleanUp] Unexpected cleanup error: {ex.Message}");
         }
     }
 
