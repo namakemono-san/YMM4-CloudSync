@@ -20,6 +20,7 @@
 - Google Drive
 - Dropbox
 - OneDrive
+
 ※ 今後、対応クラウドサービスの追加を予定しています。
 
 ## 動作確認済みバージョン
