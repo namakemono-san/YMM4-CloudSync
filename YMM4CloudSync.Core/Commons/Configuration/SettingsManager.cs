@@ -1,5 +1,6 @@
 using System.IO;
 using System.Text.Json;
+using YMM4CloudSync.Core.Commons.Utilities;
 using YMM4CloudSync.Core.Models;
 
 namespace YMM4CloudSync.Core.Commons.Configuration;
@@ -21,7 +22,7 @@ public static class SettingsManager
         }
         catch (Exception ex)
         {
-            SentrySdk.CaptureException(ex);
+            SentryReporter.Capture(ex);
             return new UserSettings();
         }
     }
@@ -39,7 +40,7 @@ public static class SettingsManager
         }
         catch (Exception ex)
         {
-            SentrySdk.CaptureException(ex);
+            SentryReporter.Capture(ex);
         }
     }
 }

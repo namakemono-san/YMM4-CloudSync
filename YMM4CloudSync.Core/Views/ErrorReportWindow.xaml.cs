@@ -1,4 +1,5 @@
 ﻿using System.Windows;
+using YMM4CloudSync.Core.Commons.Utilities;
 
 namespace YMM4CloudSync.Core.Views;
 
@@ -24,7 +25,7 @@ public partial class ErrorReportWindow : Window
 
         if (!string.IsNullOrWhiteSpace(comment))
         {
-            SentrySdk.CaptureFeedback(new SentryFeedback(comment, associatedEventId: _sentryId));
+            SentryReporter.CaptureFeedback(new SentryFeedback(comment, associatedEventId: _sentryId));
             
             MessageBox.Show("詳細レポートを送信しました。\nご協力ありがとうございます。", "送信完了", MessageBoxButton.OK, MessageBoxImage.Information);
         }

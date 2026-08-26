@@ -17,7 +17,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v3
+        uses: actions/setup-dotnet@v4
         with:
           dotnet-version: "10.0.x"
 
@@ -34,15 +34,20 @@ jobs:
           $content = $template -replace 'PLACEHOLDER_CLIENT_ID', '${{ secrets.ONEDRIVE_CLIENT_ID }}'
           Set-Content "YMM4CloudSync.Core/Services/OneDriveCredentials.cs" $content
 
-      - name: Create OneDrive Credentials
+      - name: Create Dropbox Credentials
         run: |
           $template = Get-Content "YMM4CloudSync.Core/Services/DropboxCredentials.cs.example" -Raw
           $content = $template -replace 'PLACEHOLDER_CLIENT_ID', '${{ secrets.DROPBOX_CLIENT_ID }}'
-          $content = $content -replace 'PLACEHOLDER_CLIENT_SECRET', '${{ secrets.DROPBOX_CLIENT_SECRET }}'
           Set-Content "YMM4CloudSync.Core/Services/DropboxCredentials.cs" $content
 
+      - name: Test
+        run: dotnet test YMM4CloudSync.Tests/YMM4CloudSync.Tests.csproj --configuration Release
+
       - name: Publish
-        run: dotnet publish --configuration Release -o publish
+        run: |
+          dotnet publish YMM4CloudSync.Core/YMM4CloudSync.Core.csproj --configuration Release -o publish
+          dotnet publish YMM4CloudSync.YMMX.Core/YMM4CloudSync.YMMX.Core.csproj --configuration Release -o publish
+          dotnet publish YMM4CloudSync.YMMX.Launcher/YMM4CloudSync.YMMX.Launcher.csproj --configuration Release -o publish
 
       - name: Copy README to publish folder
         run: Copy-Item ".github\assets\readme.txt" -Destination "publish\readme.txt"

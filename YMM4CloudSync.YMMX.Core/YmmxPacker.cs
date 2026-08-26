@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
 using System.Security.Cryptography;
@@ -15,7 +15,6 @@ public class PackResult
     public bool Success { get; init; }
     public string OutputPath { get; init; } = string.Empty;
     public List<string> MissingFiles { get; init; } = [];
-    public List<string> Warnings { get; init; } = [];
 }
 
 public static class YmmxPacker
@@ -35,15 +34,17 @@ public static class YmmxPacker
         { "YukkuriMovieMaker.Project.Items.AudioItem", "audio" },
     };
 
-    public static PackResult Pack(string ymmpPath, string outputYmmxPath, string projectName, IProgress<double>? progress = null)
+    public static PackResult Pack(string ymmpPath, string outputYmmxPath, string projectName,
+        IProgress<double>? progress = null, CancellationToken cancellationToken = default)
     {
         if (!File.Exists(ymmpPath))
         {
             throw new FileNotFoundException("ymmp ファイルが見つかりません。", ymmpPath);
         }
-        
+
+        cancellationToken.ThrowIfCancellationRequested();
+
         var missingFiles = new List<string>();
-        var warnings = new List<string>();
 
         var ymmpContent = File.ReadAllText(ymmpPath);
         var json = JsonNode.Parse(ymmpContent) 
@@ -84,13 +85,13 @@ public static class YmmxPacker
             
             var totalContentSize = packList.Sum(f => new FileInfo(f.Source).Length);
             var required = totalContentSize + ExtraSpaceReserveBytes;
-            
+
             DiskSpaceHelper.EnsureFreeSpace(outputYmmxPath, required);
-            
-            var totalBytes = packList.Sum(f => new FileInfo(f.Source).Length) * 2;
+
+            var totalBytes = totalContentSize * 2;
             long processedBytes = 0;
-            
-            var contentHash = ComputeContentHashFromList(packList, progress, totalBytes, ref processedBytes);
+
+            var contentHash = ComputeContentHashFromList(packList, progress, totalBytes, ref processedBytes, cancellationToken);
 
             var meta = new YmmxMeta
             {
@@ -111,21 +112,34 @@ public static class YmmxPacker
             {
                 File.Delete(outputYmmxPath);
             }
-            
+
             var finalZipList = new List<(string Source, string RelativeDest)>(packList)
             {
                 (metaPath, "meta.json")
             };
 
-            CreateZipFromList(finalZipList, outputYmmxPath, progress, totalBytes, ref processedBytes);
-            
+            totalBytes += new FileInfo(metaPath).Length;
+
+            try
+            {
+                CreateZipFromList(finalZipList, outputYmmxPath, progress, totalBytes, ref processedBytes, cancellationToken);
+            }
+            catch
+            {
+                DeleteQuietly(outputYmmxPath);
+                throw;
+            }
+
             return new PackResult
             {
                 Success = true,
                 OutputPath = outputYmmxPath,
-                MissingFiles = missingFiles,
-                Warnings = warnings
+                MissingFiles = missingFiles
             };
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -187,30 +201,22 @@ public static class YmmxPacker
                         }
                         else
                         {
-                            if (!File.Exists(normalizedPath))
+                            var subFolder = folder ?? "other";
+
+                            if (!usedFileNames.TryGetValue(subFolder, out var usedNames))
                             {
-                                if (!missingFiles.Contains(normalizedPath))
-                                    missingFiles.Add(normalizedPath);
+                                usedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                                usedFileNames[subFolder] = usedNames;
                             }
-                            else
-                            {
-                                var subFolder = folder ?? "other";
-                
-                                if (!usedFileNames.TryGetValue(subFolder, out var usedNames))
-                                {
-                                    usedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                                    usedFileNames[subFolder] = usedNames;
-                                }
 
-                                var uniqueFileName = GetUniqueFileName(normalizedPath, usedNames);
-                                usedNames.Add(uniqueFileName);
+                            var uniqueFileName = GetUniqueFileName(normalizedPath, usedNames);
+                            usedNames.Add(uniqueFileName);
 
-                                var relativePath = $"assets/{subFolder}/{uniqueFileName}";
-                                var fullPath = Path.Combine(assetsDir, subFolder, uniqueFileName);
+                            var relativePath = $"assets/{subFolder}/{uniqueFileName}";
+                            var fullPath = Path.Combine(assetsDir, subFolder, uniqueFileName);
 
-                                filePaths[normalizedPath] = fullPath;
-                                obj["FilePath"] = relativePath;
-                            }
+                            filePaths[normalizedPath] = fullPath;
+                            obj["FilePath"] = relativePath;
                         }
                     }
                 }
@@ -264,18 +270,21 @@ public static class YmmxPacker
     }
 
     private static string ComputeContentHashFromList(
-        List<(string Source, string RelativeDest)> fileList, 
-        IProgress<double>? progress, 
-        long totalJobBytes, 
-        ref long processedBytes)
+        List<(string Source, string RelativeDest)> fileList,
+        IProgress<double>? progress,
+        long totalJobBytes,
+        ref long processedBytes,
+        CancellationToken cancellationToken)
     {
         using var sha256 = SHA256.Create();
         var buffer = new byte[FileBufferSize];
 
         foreach (var (source, relativeDest) in fileList)
         {
-            if (relativeDest.EndsWith("meta.json", StringComparison.OrdinalIgnoreCase)) continue;
-            
+            if (relativeDest.Equals("meta.json", StringComparison.OrdinalIgnoreCase)) continue;
+
+            cancellationToken.ThrowIfCancellationRequested();
+
             var pathBytes = Encoding.UTF8.GetBytes(relativeDest);
             sha256.TransformBlock(pathBytes, 0, pathBytes.Length, null, 0);
 
@@ -283,51 +292,72 @@ public static class YmmxPacker
             int bytesRead;
             while ((bytesRead = stream.Read(buffer, 0, buffer.Length)) > 0)
             {
+                cancellationToken.ThrowIfCancellationRequested();
+
                 sha256.TransformBlock(buffer, 0, bytesRead, null, 0);
 
                 if (progress == null || totalJobBytes <= 0) continue;
 
                 processedBytes += bytesRead;
-                progress.Report((double)processedBytes / totalJobBytes * 100);
+                progress.Report(Math.Min(100.0, (double)processedBytes / totalJobBytes * 100));
             }
         }
 
         sha256.TransformFinalBlock([], 0, 0);
         return Convert.ToHexString(sha256.Hash!).ToLowerInvariant();
     }
-    
+
     private static void CreateZipFromList(
         List<(string Source, string RelativeDest)> fileList,
-        string outputZipPath, 
-        IProgress<double>? progress, 
-        long totalJobBytes, 
-        ref long processedBytes)
+        string outputZipPath,
+        IProgress<double>? progress,
+        long totalJobBytes,
+        ref long processedBytes,
+        CancellationToken cancellationToken)
     {
         var dir = Path.GetDirectoryName(outputZipPath);
         if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
 
         using var zipToOpen = new FileStream(outputZipPath, FileMode.Create);
         using var archive = new ZipArchive(zipToOpen, ZipArchiveMode.Create);
-        
+
         var buffer = new byte[FileBufferSize];
 
         foreach (var (source, relativeDest) in fileList)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             var entry = archive.CreateEntry(relativeDest, CompressionLevel.Optimal);
 
             using var sourceStream = new FileStream(source, FileMode.Open, FileAccess.Read);
             using var entryStream = entry.Open();
-            
+
             int bytesRead;
             while ((bytesRead = sourceStream.Read(buffer, 0, buffer.Length)) > 0)
             {
+                cancellationToken.ThrowIfCancellationRequested();
+
                 entryStream.Write(buffer, 0, bytesRead);
 
                 if (progress == null || totalJobBytes <= 0) continue;
-                
+
                 processedBytes += bytesRead;
-                progress.Report((double)processedBytes / totalJobBytes * 100);
+                progress.Report(Math.Min(100.0, (double)processedBytes / totalJobBytes * 100));
             }
+        }
+    }
+
+    private static void DeleteQuietly(string path)
+    {
+        if (!File.Exists(path)) return;
+
+        try
+        {
+            File.Delete(path);
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[YmmxPacker] Failed to delete {path}: {ex.Message}");
         }
     }
 }

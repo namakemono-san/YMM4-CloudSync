@@ -1,10 +1,13 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.IO;
+using System.Reflection;
 using System.Text.Json;
 using System.Windows;
+using System.Windows.Threading;
 using YMM4CloudSync.Core.Commons.Configuration;
 using YMM4CloudSync.Core.Commons.Network;
 using YMM4CloudSync.Core.Commons.Utilities;
+using YMM4CloudSync.Core.ViewModels;
 using YMM4CloudSync.Core.Views;
 using YukkuriMovieMaker.Plugin;
 
@@ -14,7 +17,7 @@ public class Plugin : IToolPlugin, IDisposable
 {
     public string Name => "YMM4 Cloud Sync";
 
-    public Type ViewModelType => typeof(ToolView);
+    public Type ViewModelType => typeof(ToolViewModel);
     public Type ViewType => typeof(ToolView);
     
     private static readonly string PluginDirectory = Path.GetDirectoryName(typeof(Plugin).Assembly.Location)!;
@@ -22,20 +25,14 @@ public class Plugin : IToolPlugin, IDisposable
     private static readonly string IconPath = Path.Combine(PluginDirectory, "Resources", "YMMX_logo.ico");
 
     private readonly YmmxFileExtension _ymmxFileExtension = new(LauncherPath, IconPath);
-    private readonly IDisposable _sentryGuard;
 
     public Plugin()
     {
-        var settings = SettingsManager.Load();
         var sentrySettings = LoadSettings().Sentry;
-    
-        _sentryGuard = SentrySdk.Init(o =>
-        {
-            o.Dsn = sentrySettings.Dsn;
-            o.Release = sentrySettings.Release;
-            o.SendDefaultPii = sentrySettings.SendDefaultPii;
-        });
-        
+        SentryReporter.Initialize(sentrySettings.Dsn, GetSentryRelease(), sentrySettings.SendDefaultPii);
+
+        var settings = SettingsManager.Load();
+
         CheckFileAssociation();
 
         Task.Run(() =>
@@ -65,22 +62,28 @@ public class Plugin : IToolPlugin, IDisposable
 
         if (settings.EnableUpdateCheck)
         {
-            Task.Run(CheckUpdateAsync);
+            ScheduleUpdateCheck();
         }
     }
-    
+
     public void Dispose()
     {
-        _sentryGuard.Dispose();
+        SentryReporter.Shutdown();
     }
-    
+
+    private static string GetSentryRelease()
+    {
+        var version = Assembly.GetExecutingAssembly().GetName().Version;
+        return $"ymm4-cloudsync@{version?.ToString(3) ?? "0.0.0"}";
+    }
+
     private static AppSettings LoadSettings()
     {
         try
         {
             var pluginDir = Path.GetDirectoryName(typeof(Plugin).Assembly.Location)!;
             var configPath = Path.Combine(pluginDir, "appsettings.json");
-        
+
             if (File.Exists(configPath))
             {
                 var json = File.ReadAllText(configPath);
@@ -90,7 +93,7 @@ public class Plugin : IToolPlugin, IDisposable
         }
         catch (Exception ex)
         {
-            SentrySdk.CaptureException(ex);
+            Debug.WriteLine($"[YMM4CS][Settings] Failed to read appsettings.json: {ex.Message}");
         }
 
         return new AppSettings();
@@ -143,18 +146,57 @@ public class Plugin : IToolPlugin, IDisposable
         }
     }
 
-    private static async Task CheckUpdateAsync()
+    private static void ScheduleUpdateCheck()
     {
-        var checker = new UpdateChecker();
-        var info = await checker.CheckForUpdatesAsync();
-        
-        if (info != null)
+        var app = Application.Current;
+
+        if (app == null)
         {
-            Application.Current?.Dispatcher.Invoke(() =>
+            Debug.WriteLine("[YMM4CS][Update] No WPF application; skipping update check.");
+            return;
+        }
+
+        app.Dispatcher.InvokeAsync(() =>
+        {
+            var main = app.MainWindow;
+
+            if (main is { IsLoaded: false })
             {
-                var window = new UpdateNotificationWindow(info);
-                window.ShowDialog();
-            });
+                void OnMainWindowLoaded(object sender, RoutedEventArgs e)
+                {
+                    main.Loaded -= OnMainWindowLoaded;
+                    _ = RunUpdateCheckAsync();
+                }
+
+                main.Loaded += OnMainWindowLoaded;
+                return;
+            }
+
+            _ = RunUpdateCheckAsync();
+        }, DispatcherPriority.ApplicationIdle);
+    }
+
+    private static async Task RunUpdateCheckAsync()
+    {
+        try
+        {
+            var checker = new UpdateChecker();
+            var info = await checker.CheckForUpdatesAsync();
+
+            if (info == null) return;
+
+            var window = new UpdateNotificationWindow(info);
+
+            var owner = Application.Current?.MainWindow;
+            if (owner != null && !ReferenceEquals(owner, window))
+                window.Owner = owner;
+
+            window.ShowDialog();
+        }
+        catch (Exception ex)
+        {
+            SentryReporter.Capture(ex);
+            Debug.WriteLine($"[YMM4CS][Update] Update check failed: {ex.Message}");
         }
     }
     
@@ -203,6 +245,6 @@ internal class AppSettings
 internal class SentrySettings
 {
     public string Dsn { get; set; } = "";
-    public string Release { get; set; } = "ymm4-cloudsync@1.0.0";
+
     public bool SendDefaultPii { get; set; } = false;
 }

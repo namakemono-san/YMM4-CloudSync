@@ -1,8 +1,9 @@
-using Dropbox.Api;
+﻿using Dropbox.Api;
 using Dropbox.Api.Files;
 using System.Diagnostics;
 using System.IO;
 using System.Net;
+using System.Security.Cryptography;
 using System.Text;
 using YMM4CloudSync.Core.Commons.Network;
 using YMM4CloudSync.Core.Commons.Security;
@@ -15,19 +16,20 @@ public class DropboxService : ICloudStorageService, IDisposable
     public string ServiceName => "Dropbox";
 
     private const string AppKey = DropboxCredentials.ClientId;
-    private const string AppSecret = DropboxCredentials.ClientSecret; 
-    
-    private const string RedirectUri = "http://127.0.0.1:52475/authorize";
-    
+
+    private static readonly int[] RedirectPorts = [52475, 52476, 52477];
+
+    private static readonly TimeSpan AuthorizationTimeout = TimeSpan.FromMinutes(5);
+
     private const string TokenCachePath = "dropbox_token_cache.bin";
-    
+
     /// <summary>
     /// Dropbox upload limit for simple upload.
-    /// Files larger than 150MB should use chunked upload session.
+    /// Files larger than 150MB must use a chunked upload session.
     /// See: https://www.dropbox.com/developers/documentation/http/documentation#files-upload
     /// </summary>
     private const long UploadLimitBytes = 150 * 1024 * 1024; // 150MB
-    
+
     /// <summary>
     /// Chunk size for uploading large files to Dropbox.
     /// Recommended size is between 4MB-150MB for optimal performance.
@@ -38,12 +40,14 @@ public class DropboxService : ICloudStorageService, IDisposable
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "YMM4CloudSync", TokenCachePath);
 
+    private static string GetRedirectUri(int port) => $"http://127.0.0.1:{port}/authorize";
+
     private DropboxClient? _client;
     private bool _disposed;
 
     public bool IsAuthenticated => _client != null;
 
-    public async Task<bool> AuthenticateAsync()
+    public async Task<bool> AuthenticateAsync(CancellationToken cancellationToken = default)
     {
         try
         {
@@ -54,8 +58,8 @@ public class DropboxService : ICloudStorageService, IDisposable
                 return false;
 
             var refreshToken = Encoding.UTF8.GetString(tokenData);
-            
-            _client = new DropboxClient(refreshToken, AppKey, AppSecret);
+
+            _client = new DropboxClient(refreshToken, AppKey);
 
             await _client.Users.GetCurrentAccountAsync();
 
@@ -63,7 +67,7 @@ public class DropboxService : ICloudStorageService, IDisposable
         }
         catch (Exception ex)
         {
-            SentrySdk.CaptureException(ex);
+            SentryReporter.Capture(ex);
             Debug.WriteLine($"[Dropbox] Silent auth failed: {ex.Message}");
             _client?.Dispose();
             _client = null;
@@ -71,51 +75,73 @@ public class DropboxService : ICloudStorageService, IDisposable
         }
     }
 
-    public async Task<bool> AuthenticateInteractiveAsync()
+    public async Task<bool> AuthenticateInteractiveAsync(CancellationToken cancellationToken = default)
     {
+        HttpListener? listener = null;
+
         try
         {
+            listener = StartCallbackListener(out var redirectUri);
+
             var pkceFlow = new PKCEOAuthFlow();
+
+            var expectedState = GenerateState();
+
             var authorizeUri = pkceFlow.GetAuthorizeUri(
-                OAuthResponseType.Code, 
-                AppKey, 
-                RedirectUri,
-                state: null,
+                OAuthResponseType.Code,
+                AppKey,
+                redirectUri,
+                state: expectedState,
                 tokenAccessType: TokenAccessType.Offline
             );
 
-            using var listener = new HttpListener();
-            listener.Prefixes.Add(RedirectUri + "/");
-            listener.Start();
-
             Process.Start(new ProcessStartInfo(authorizeUri.ToString()) { UseShellExecute = true });
 
-            var context = await listener.GetContextAsync();
-            var code = context.Request.QueryString["code"];
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeoutCts.CancelAfter(AuthorizationTimeout);
 
-            const string responseString = "<html><body><h2>Authentication Successful</h2><p>You can close this window now.</p></body></html>";
-            var buffer = Encoding.UTF8.GetBytes(responseString);
-            context.Response.ContentLength64 = buffer.Length;
-            await context.Response.OutputStream.WriteAsync(buffer);
-            await Task.Delay(500);
-            context.Response.OutputStream.Close();
+            var context = await WaitForCallbackAsync(listener, timeoutCts.Token);
+
+            var code = context.Request.QueryString["code"];
+            var returnedState = context.Request.QueryString["state"];
+            var error = context.Request.QueryString["error"];
+
+            var stateMatches = string.Equals(returnedState, expectedState, StringComparison.Ordinal);
+            var succeeded = stateMatches && string.IsNullOrEmpty(error) && !string.IsNullOrEmpty(code);
+
+            await WriteCallbackResponseAsync(context, succeeded, stateMatches);
+
             listener.Stop();
+
+            if (!stateMatches)
+                throw new InvalidOperationException(
+                    "認証の応答が正しくありません。\n別のアプリケーションからの応答である可能性があります。もう一度やり直してください。");
+
+            if (!string.IsNullOrEmpty(error))
+                throw new InvalidOperationException($"Dropbox の認証が拒否されました。({error})");
 
             if (string.IsNullOrEmpty(code)) return false;
 
-            var tokenResult = await pkceFlow.ProcessCodeFlowAsync(code, AppKey, RedirectUri);
+            var tokenResult = await pkceFlow.ProcessCodeFlowAsync(code, AppKey, redirectUri);
 
             if (string.IsNullOrEmpty(tokenResult.RefreshToken))
             {
-                throw new Exception("リフレッシュトークンが取得できませんでした。連携を解除してやり直してください。");
+                throw new InvalidOperationException("リフレッシュトークンが取得できませんでした。連携を解除してやり直してください。");
             }
 
             var tokenBytes = Encoding.UTF8.GetBytes(tokenResult.RefreshToken);
             SecureStorageHelper.Save(GetTokenPath(), tokenBytes);
 
-            _client = new DropboxClient(tokenResult.RefreshToken, AppKey, AppSecret);
+            _client = new DropboxClient(tokenResult.RefreshToken, AppKey);
 
             return true;
+        }
+        catch (OperationCanceledException)
+        {
+            Debug.WriteLine("[Dropbox] Interactive auth cancelled or timed out.");
+            _client?.Dispose();
+            _client = null;
+            return false;
         }
         catch (Exception ex)
         {
@@ -124,9 +150,101 @@ public class DropboxService : ICloudStorageService, IDisposable
             _client = null;
             return false;
         }
+        finally
+        {
+            listener?.Close();
+        }
     }
 
-    public async Task LogoutAsync()
+    private static HttpListener StartCallbackListener(out string redirectUri)
+    {
+        HttpListenerException? lastError = null;
+
+        foreach (var port in RedirectPorts)
+        {
+            var uri = GetRedirectUri(port);
+            var listener = new HttpListener();
+            listener.Prefixes.Add(uri + "/");
+
+            try
+            {
+                listener.Start();
+                redirectUri = uri;
+                return listener;
+            }
+            catch (HttpListenerException ex)
+            {
+                lastError = ex;
+                listener.Close();
+            }
+        }
+
+        throw new InvalidOperationException(
+            $"認証用のポート ({string.Join(", ", RedirectPorts)}) がすべて使用中です。\n" +
+            "他のアプリケーションを終了してからもう一度お試しください。", lastError);
+    }
+
+    private static async Task<HttpListenerContext> WaitForCallbackAsync(
+        HttpListener listener, CancellationToken cancellationToken)
+    {
+        var contextTask = listener.GetContextAsync();
+
+        var cancellationSignal = new TaskCompletionSource();
+        await using var registration = cancellationToken.Register(() => cancellationSignal.TrySetResult());
+
+        if (await Task.WhenAny(contextTask, cancellationSignal.Task) != contextTask)
+        {
+            ObserveFailure(contextTask);
+            cancellationToken.ThrowIfCancellationRequested();
+        }
+
+        return await contextTask;
+    }
+
+    private static void ObserveFailure(Task task)
+    {
+        _ = task.ContinueWith(
+            static t => _ = t.Exception,
+            CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
+    }
+
+    private static async Task WriteCallbackResponseAsync(
+        HttpListenerContext context, bool succeeded, bool stateMatches)
+    {
+        var body = succeeded
+            ? "<html><body><h2>Authentication Successful</h2><p>You can close this window now.</p></body></html>"
+            : stateMatches
+                ? "<html><body><h2>Authentication Failed</h2><p>Please return to YMM4 and try again.</p></body></html>"
+                : "<html><body><h2>Authentication Rejected</h2><p>The response did not match this request.</p></body></html>";
+
+        var buffer = Encoding.UTF8.GetBytes(body);
+        context.Response.ContentType = "text/html; charset=utf-8";
+        context.Response.ContentLength64 = buffer.Length;
+
+        try
+        {
+            await context.Response.OutputStream.WriteAsync(buffer);
+            await context.Response.OutputStream.FlushAsync();
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[Dropbox] Failed to write callback response: {ex.Message}");
+        }
+        finally
+        {
+            context.Response.OutputStream.Close();
+        }
+    }
+
+    private static string GenerateState()
+    {
+        var bytes = RandomNumberGenerator.GetBytes(32);
+        return Convert.ToHexString(bytes);
+    }
+
+    public async Task LogoutAsync(CancellationToken cancellationToken = default)
     {
         try
         {
@@ -147,26 +265,44 @@ public class DropboxService : ICloudStorageService, IDisposable
         }
     }
 
-
-    public async Task<List<CloudFile>> ListFilesAsync(string? folderId = null)
+    public async Task<List<CloudFile>> ListFilesAsync(string? folderId = null,
+        CancellationToken cancellationToken = default)
     {
-        EnsureAuthenticated();
-        
+        var client = EnsureAuthenticated();
+
         var path = NormalizePathForListFolder(folderId);
 
         try
         {
-            var list = await _client!.Files.ListFolderAsync(path, recursive: false, includeDeleted: false);
+            var list = await RetryHelper.ExecuteWithRetryAsync(
+                () => client.Files.ListFolderAsync(path, recursive: false, includeDeleted: false),
+                cancellationToken: cancellationToken);
+
             var result = new List<CloudFile>();
 
             while (true)
             {
-                result.AddRange(list.Entries.Select(item => new CloudFile(item.PathDisplay, item.Name, item.IsFolder ? "application/vnd.dropbox.folder" : "application/octet-stream", item.IsFile ? (long?)item.AsFile.Size : null, item.IsFile ? (DateTime?)item.AsFile.ClientModified.ToLocalTime() : null)));
+                cancellationToken.ThrowIfCancellationRequested();
+
+                result.AddRange(list.Entries.Select(item => new CloudFile(
+                    item.PathDisplay,
+                    item.Name,
+                    item.IsFolder ? "application/vnd.dropbox.folder" : "application/octet-stream",
+                    item.IsFile ? (long?)item.AsFile.Size : null,
+                    item.IsFile ? (DateTime?)item.AsFile.ClientModified.ToLocalTime() : null)));
 
                 if (!list.HasMore) break;
-                list = await _client.Files.ListFolderContinueAsync(list.Cursor);
+
+                var cursor = list.Cursor;
+                list = await RetryHelper.ExecuteWithRetryAsync(
+                    () => client.Files.ListFolderContinueAsync(cursor),
+                    cancellationToken: cancellationToken);
             }
-            return result.OrderByDescending(f => f.ModifiedTime).ToList();
+
+            return result
+                .OrderByDescending(f => f.MimeType == "application/vnd.dropbox.folder")
+                .ThenByDescending(f => f.ModifiedTime ?? DateTime.MinValue)
+                .ToList();
         }
         catch (ApiException<ListFolderError> ex) when (ex.ErrorResponse.IsPath && ex.ErrorResponse.AsPath.Value.IsNotFound)
         {
@@ -174,79 +310,148 @@ public class DropboxService : ICloudStorageService, IDisposable
         }
     }
 
-    public async Task<string> UploadFileAsync(string localPath, string remotePath, IProgress<double>? progress = null)
+    public async Task<string> UploadFileAsync(string localPath, string remotePath,
+        IProgress<double>? progress = null, CancellationToken cancellationToken = default)
     {
-        EnsureAuthenticated();
+        var client = EnsureAuthenticated();
 
         if (!File.Exists(localPath))
             throw new FileNotFoundException("ファイルが見つかりません。", localPath);
 
         var uploadPath = NormalizePathForApi(remotePath);
-        
+
         var fileInfo = new FileInfo(localPath);
 
-        if (fileInfo.Length > UploadLimitBytes)
-        {
-            return await UploadLargeFileAsync(localPath, uploadPath, fileInfo.Length, progress);
-        }
-
-        return await UploadLargeFileAsync(localPath, uploadPath, fileInfo.Length, progress);
+        return fileInfo.Length >= UploadLimitBytes
+            ? await UploadLargeFileAsync(client, localPath, uploadPath, fileInfo.Length, progress, cancellationToken)
+            : await UploadSmallFileAsync(client, localPath, uploadPath, fileInfo.Length, progress, cancellationToken);
     }
 
-    private async Task<string> UploadLargeFileAsync(string localPath, string remotePath, long totalSize, IProgress<double>? progress)
+    private static async Task<string> UploadSmallFileAsync(DropboxClient client, string localPath, string remotePath, long totalSize,
+        IProgress<double>? progress, CancellationToken cancellationToken)
     {
-        return await RetryHelper.ExecuteWithRetryAsync(async () =>
+        var metadata = await RetryHelper.ExecuteWithRetryAsync(async () =>
         {
-            await using var stream = new FileStream(localPath, FileMode.Open, FileAccess.Read);
-            
-            var chunk = new byte[ChunkSizeBytes];
-            var read = await stream.ReadAsync(chunk.AsMemory(0, ChunkSizeBytes));
-            
-            UploadSessionStartResult sessionStartResult;
-            using (var mem = new MemoryStream(chunk, 0, read))
-            {
-                sessionStartResult = await _client!.Files.UploadSessionStartAsync(body: mem);
-            }
+            cancellationToken.ThrowIfCancellationRequested();
 
-            long uploaded = read;
-            progress?.Report((double)uploaded / totalSize * 100);
+            await using var stream = new FileStream(localPath, FileMode.Open, FileAccess.Read, FileShare.Read);
+
+            progress?.Report(0);
+
+            return await client.Files.UploadAsync(
+                remotePath,
+                WriteMode.Overwrite.Instance,
+                body: stream);
+        }, cancellationToken: cancellationToken);
+
+        progress?.Report(100.0);
+        _ = totalSize;
+
+        return metadata.Id;
+    }
+
+    private static async Task<string> UploadLargeFileAsync(DropboxClient client, string localPath, string remotePath, long totalSize,
+        IProgress<double>? progress, CancellationToken cancellationToken)
+    {
+        await using var stream = new FileStream(localPath, FileMode.Open, FileAccess.Read, FileShare.Read);
+
+        var chunk = new byte[ChunkSizeBytes];
+
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var read = await stream.ReadAsync(chunk.AsMemory(0, ChunkSizeBytes), cancellationToken);
+
+        var sessionStartResult = await RetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            using var mem = new MemoryStream(chunk, 0, read);
+            return await client.Files.UploadSessionStartAsync(body: mem);
+        }, cancellationToken: cancellationToken);
+
+        var sessionId = sessionStartResult.SessionId;
+        long uploaded = read;
+        progress?.Report(totalSize > 0 ? (double)uploaded / totalSize * 100 : 0);
+
+        try
+        {
+            if (uploaded >= totalSize)
+            {
+                return await FinishSessionAsync(client, sessionId, uploaded, remotePath,
+                    Array.Empty<byte>(), 0, progress, cancellationToken);
+            }
 
             while (uploaded < totalSize)
             {
+                cancellationToken.ThrowIfCancellationRequested();
+
                 var bytesToRead = (int)Math.Min(ChunkSizeBytes, totalSize - uploaded);
-                var bytesRead = await stream.ReadAsync(chunk.AsMemory(0, bytesToRead));
-                
+                var bytesRead = await stream.ReadAsync(chunk.AsMemory(0, bytesToRead), cancellationToken);
+
                 if (bytesRead == 0) break;
 
-                using (var mem = new MemoryStream(chunk, 0, bytesRead))
+                var isFinalChunk = uploaded + bytesRead >= totalSize;
+
+                if (isFinalChunk)
                 {
-                    if (uploaded + bytesRead < totalSize)
-                    {
-                        var cursor = new UploadSessionCursor(sessionStartResult.SessionId, (ulong)uploaded);
-                        await _client.Files.UploadSessionAppendV2Async(cursor, body: mem);
-                    }
-                    else
-                    {
-                        var cursor = new UploadSessionCursor(sessionStartResult.SessionId, (ulong)uploaded);
-                        var commitInfo = new CommitInfo(remotePath, WriteMode.Overwrite.Instance);
-                        var metadata = await _client.Files.UploadSessionFinishAsync(cursor, commitInfo, body: mem);
-                        progress?.Report(100.0);
-                        return metadata.Id;
-                    }
+                    return await FinishSessionAsync(client, sessionId, uploaded, remotePath,
+                        chunk, bytesRead, progress, cancellationToken);
                 }
-                
+
+                var offset = (ulong)uploaded;
+                await RetryHelper.ExecuteWithRetryAsync(async () =>
+                {
+                    using var mem = new MemoryStream(chunk, 0, bytesRead);
+                    var cursor = new UploadSessionCursor(sessionId, offset);
+                    await client.Files.UploadSessionAppendV2Async(cursor, body: mem);
+                }, cancellationToken: cancellationToken);
+
                 uploaded += bytesRead;
                 progress?.Report((double)uploaded / totalSize * 100);
             }
-            
-            throw new InvalidOperationException("大容量ファイルのアップロードに失敗しました。");
-        });
+
+            return await FinishSessionAsync(client, sessionId, uploaded, remotePath,
+                Array.Empty<byte>(), 0, progress, cancellationToken);
+        }
+        catch
+        {
+            await CloseSessionQuietlyAsync(client, sessionId, uploaded);
+            throw;
+        }
     }
 
-    public async Task DownloadFileAsync(string remoteFileId, string localPath, IProgress<double>? progress = null)
+    private static async Task<string> FinishSessionAsync(DropboxClient client, string sessionId, long offset, string remotePath,
+        byte[] buffer, int count, IProgress<double>? progress, CancellationToken cancellationToken)
     {
-        EnsureAuthenticated();
-        
+        var metadata = await RetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            using var mem = new MemoryStream(buffer, 0, count);
+            var cursor = new UploadSessionCursor(sessionId, (ulong)offset);
+            var commitInfo = new CommitInfo(remotePath, WriteMode.Overwrite.Instance);
+            return await client.Files.UploadSessionFinishAsync(cursor, commitInfo, body: mem);
+        }, cancellationToken: cancellationToken);
+
+        progress?.Report(100.0);
+        return metadata.Id;
+    }
+
+    private static async Task CloseSessionQuietlyAsync(DropboxClient client, string sessionId, long offset)
+    {
+        try
+        {
+            using var empty = new MemoryStream([], 0, 0);
+            var cursor = new UploadSessionCursor(sessionId, (ulong)offset);
+            await client.Files.UploadSessionAppendV2Async(cursor, close: true, body: empty);
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[Dropbox] Failed to close upload session: {ex.Message}");
+        }
+    }
+
+    public async Task DownloadFileAsync(string remoteFileId, string localPath,
+        IProgress<double>? progress = null, CancellationToken cancellationToken = default)
+    {
+        var client = EnsureAuthenticated();
+
         var downloadPath = NormalizePathForApi(remoteFileId);
 
         var dir = Path.GetDirectoryName(localPath);
@@ -257,65 +462,70 @@ public class DropboxService : ICloudStorageService, IDisposable
 
         try
         {
+            await RetryHelper.ExecuteWithRetryAsync(async () =>
             {
-                using var response = await _client!.Files.DownloadAsync(downloadPath);
+                using var response = await client.Files.DownloadAsync(downloadPath);
                 var totalSize = (long)response.Response.Size;
-                
+
                 await using var destStream = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None);
                 await using var srcStream = await response.GetContentAsStreamAsync();
-                
+
                 var buffer = new byte[64 * 1024];
                 long totalRead = 0;
                 int read;
-                
-                while ((read = await srcStream.ReadAsync(buffer)) > 0)
+
+                while ((read = await srcStream.ReadAsync(buffer, cancellationToken)) > 0)
                 {
-                    await destStream.WriteAsync(buffer.AsMemory(0, read));
+                    await destStream.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
                     totalRead += read;
                     if (totalSize > 0)
                     {
                         progress?.Report((double)totalRead / totalSize * 100.0);
                     }
                 }
-            }
+            }, cancellationToken: cancellationToken);
 
-            if (File.Exists(localPath))
-            {
-                File.Delete(localPath);
-            }
-            File.Move(tempPath, localPath);
+            File.Move(tempPath, localPath, overwrite: true);
         }
         catch
         {
-            if (!File.Exists(tempPath)) throw;
-            try 
-            { 
-                File.Delete(tempPath); 
-            } 
-            catch (Exception ex)
-            { 
-                Debug.WriteLine($"[Dropbox] Failed to delete temporary file: {ex.Message}");
-            }
+            DeleteTempFileQuietly(tempPath);
             throw;
         }
     }
 
-    public async Task DeleteFileAsync(string fileId)
+    private static void DeleteTempFileQuietly(string tempPath)
     {
-        EnsureAuthenticated();
-        await _client!.Files.DeleteV2Async(NormalizePathForApi(fileId));
+        if (!File.Exists(tempPath)) return;
+
+        try
+        {
+            File.Delete(tempPath);
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[Dropbox] Failed to delete temporary file: {ex.Message}");
+        }
     }
 
-    private void EnsureAuthenticated()
+    public async Task DeleteFileAsync(string fileId, CancellationToken cancellationToken = default)
     {
-        if (_client == null)
-            throw new InvalidOperationException("Dropboxに認証されていません。連携タブからサインインしてください。");
+        var client = EnsureAuthenticated();
+        await RetryHelper.ExecuteWithRetryAsync(
+            () => client.Files.DeleteV2Async(NormalizePathForApi(fileId)),
+            cancellationToken: cancellationToken);
     }
-    
+
+    private DropboxClient EnsureAuthenticated()
+    {
+        return _client
+               ?? throw new InvalidOperationException("Dropboxに認証されていません。連携タブからサインインしてください。");
+    }
+
     private static string NormalizePathForListFolder(string? path)
     {
         if (string.IsNullOrEmpty(path)) return "";
-        
+
         var normalized = NormalizePathCore(path);
         return normalized == "/" ? "" : normalized;
     }
@@ -328,7 +538,7 @@ public class DropboxService : ICloudStorageService, IDisposable
         }
         return NormalizePathCore(path);
     }
-    
+
     private static string NormalizePathCore(string path)
     {
         var segments = path.Split(['/', '\\'], StringSplitOptions.RemoveEmptyEntries);
@@ -354,7 +564,7 @@ public class DropboxService : ICloudStorageService, IDisposable
                     break;
             }
         }
-        
+
         return "/" + string.Join("/", finalSegments);
     }
 

@@ -1,4 +1,4 @@
-﻿using System.IO;
+using System.IO;
 using System.Net;
 using System.Net.Http;
 
@@ -11,8 +11,15 @@ public sealed class ProgressStreamContent(
     int buffer = 64 * 1024)
     : HttpContent
 {
+    private readonly long _origin = stream.CanSeek ? stream.Position : 0;
+
     protected override async Task SerializeToStreamAsync(Stream target, TransportContext? context)
     {
+        if (stream.CanSeek && stream.Position != _origin)
+        {
+            stream.Seek(_origin, SeekOrigin.Begin);
+        }
+
         var buf = new byte[buffer];
         long sent = 0;
 

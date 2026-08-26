@@ -9,7 +9,6 @@
   
   <PropertyGroup>
     <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
-    <Version>0.2.0</Version>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <UseWPF>true</UseWPF>
@@ -39,6 +38,10 @@
     <Reference Include="YukkuriMovieMaker.Controls"
                HintPath="..\libs\YukkuriMovieMaker.Controls.dll"
                Private="false" ExcludeAssets="runtime" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="YMM4CloudSync.Tests" />
   </ItemGroup>
 
   <ItemGroup>

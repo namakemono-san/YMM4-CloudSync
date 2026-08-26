@@ -29,7 +29,23 @@ public static class SecureStorageHelper
         }
 
         var encryptedData = ProtectedData.Protect(data, null, DataProtectionScope.CurrentUser);
-        File.WriteAllBytes(path, encryptedData);
+
+        var tempPath = path + ".tmp";
+
+        try
+        {
+            File.WriteAllBytes(tempPath, encryptedData);
+            File.Move(tempPath, path, overwrite: true);
+        }
+        catch
+        {
+            if (File.Exists(tempPath))
+            {
+                try { File.Delete(tempPath); } catch { /* ignored */ }
+            }
+
+            throw;
+        }
     }
 
     public static void Delete(string path)

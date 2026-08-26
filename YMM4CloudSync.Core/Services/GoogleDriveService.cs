@@ -1,5 +1,6 @@
 ﻿using System.Diagnostics;
 using Google.Apis.Auth.OAuth2;
+using Google.Apis.Auth.OAuth2.Responses;
 using Google.Apis.Drive.v3;
 using Google.Apis.Services;
 using Google.Apis.Util.Store;
@@ -7,6 +8,7 @@ using System.IO;
 using YMM4CloudSync.Core.Commons;
 using YMM4CloudSync.Core.Commons.Network;
 using YMM4CloudSync.Core.Commons.Security;
+using YMM4CloudSync.Core.Commons.Utilities;
 
 namespace YMM4CloudSync.Core.Services;
 
@@ -30,29 +32,28 @@ public class GoogleDriveService : ICloudStorageService, IDisposable
 
     public bool IsAuthenticated => _driveService != null;
 
-    public async Task<bool> AuthenticateAsync()
+    public async Task<bool> AuthenticateAsync(CancellationToken cancellationToken = default)
     {
         if (!Directory.Exists(CredentialPath) || !Directory.EnumerateFileSystemEntries(CredentialPath).Any())
         {
             return false;
         }
-        
-        return await AuthenticateCoreAsync();
+
+        return await AuthenticateCoreAsync(cancellationToken);
     }
 
-    public async Task<bool> AuthenticateInteractiveAsync()
+    public async Task<bool> AuthenticateInteractiveAsync(CancellationToken cancellationToken = default)
     {
-        return await AuthenticateCoreAsync();
+        return await AuthenticateCoreAsync(cancellationToken);
     }
-    
-    private async Task<bool> AuthenticateCoreAsync()
+
+    private async Task<bool> AuthenticateCoreAsync(CancellationToken cancellationToken)
     {
-        CancellationTokenSource? cts = null;
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        cts.CancelAfter(TimeSpan.FromMinutes(5));
 
         try
         {
-            cts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
-
             var credential = await GoogleWebAuthorizationBroker.AuthorizeAsync(
                 new ClientSecrets
                 {
@@ -64,13 +65,14 @@ public class GoogleDriveService : ICloudStorageService, IDisposable
                 cts.Token,
                 new EncryptedFileDataStore(CredentialPath));
 
-            _driveService = new DriveService(new BaseClientService.Initializer
+            var driveService = new DriveService(new BaseClientService.Initializer
             {
                 HttpClientInitializer = credential,
                 ApplicationName = ApplicationName
             });
 
-            _appFolderId = await GetOrCreateAppFolderAsync();
+            _driveService = driveService;
+            _appFolderId = await GetOrCreateAppFolderAsync(driveService, cts.Token);
 
             return true;
         }
@@ -84,27 +86,48 @@ public class GoogleDriveService : ICloudStorageService, IDisposable
         }
         catch (Exception ex)
         {
-            try
+            if (IsCredentialRejected(ex))
             {
-                if (Directory.Exists(CredentialPath))
-                    Directory.Delete(CredentialPath, true);
-            }
-            catch (Exception ex2)
-            {
-                Debug.WriteLine($"[GoogleDrive] Failed to delete credential directory: {ex2.Message}");
+                DeleteCredentials();
             }
 
             _driveService?.Dispose();
             _driveService = null;
             _appFolderId = null;
 
-            SentrySdk.CaptureException(ex);
+            SentryReporter.Capture(ex);
             Debug.WriteLine($"[GoogleDrive] Auth error: {ex.Message}");
             return false;
         }
-        finally
+    }
+
+    private static bool IsCredentialRejected(Exception ex)
+    {
+        for (var current = ex; current != null; current = current.InnerException)
         {
-            cts?.Dispose();
+            if (current is not TokenResponseException tokenEx) continue;
+
+            var error = tokenEx.Error?.Error;
+
+            if (string.IsNullOrEmpty(error)) return true;
+
+            if (error is "invalid_grant" or "invalid_client" or "unauthorized_client")
+                return true;
+        }
+
+        return false;
+    }
+
+    private static void DeleteCredentials()
+    {
+        try
+        {
+            if (Directory.Exists(CredentialPath))
+                Directory.Delete(CredentialPath, true);
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[GoogleDrive] Failed to delete credential directory: {ex.Message}");
         }
     }
     
@@ -127,7 +150,7 @@ public class GoogleDriveService : ICloudStorageService, IDisposable
         _disposed = true;
     }
     
-    public async Task LogoutAsync()
+    public async Task LogoutAsync(CancellationToken cancellationToken = default)
     {
         if (Directory.Exists(CredentialPath))
         {
@@ -141,17 +164,19 @@ public class GoogleDriveService : ICloudStorageService, IDisposable
         await Task.CompletedTask;
     }
 
-    public async Task<string> UploadFileAsync(string localPath, string remoteName, IProgress<double>? progress = null)
+    public async Task<string> UploadFileAsync(string localPath, string remoteName,
+        IProgress<double>? progress = null, CancellationToken cancellationToken = default)
     {
-        if (_driveService == null)
-            throw new InvalidOperationException("認証されていません。");
+        var driveService = EnsureAuthenticated();
 
         if (!File.Exists(localPath))
             throw new FileNotFoundException("アップロードするファイルが見つかりません。", localPath);
 
         return await RetryHelper.ExecuteWithRetryAsync(async () =>
         {
-            var existingFileId = await FindFileByNameAsync(remoteName);
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var existingFileId = await FindFileByNameAsync(driveService, remoteName, cancellationToken);
 
             await using var stream = new FileStream(localPath, FileMode.Open, FileAccess.Read);
             var totalSize = stream.Length;
@@ -162,7 +187,7 @@ public class GoogleDriveService : ICloudStorageService, IDisposable
             if (existingFileId != null)
             {
                 var updateMetadata = new Google.Apis.Drive.v3.Data.File { Name = remoteName };
-                var updateRequest = _driveService.Files.Update(updateMetadata, existingFileId, stream,
+                var updateRequest = driveService.Files.Update(updateMetadata, existingFileId, stream,
                     "application/octet-stream");
                 updateRequest.Fields = "id, name, size, modifiedTime";
 
@@ -172,7 +197,7 @@ public class GoogleDriveService : ICloudStorageService, IDisposable
                         progress?.Report((double)p.BytesSent / totalSize * 100);
                 };
 
-                result = await updateRequest.UploadAsync();
+                result = await updateRequest.UploadAsync(cancellationToken);
                 fileId = updateRequest.ResponseBody?.Id ?? existingFileId;
             }
             else
@@ -183,7 +208,7 @@ public class GoogleDriveService : ICloudStorageService, IDisposable
                     Parents = _appFolderId != null ? [_appFolderId] : null
                 };
 
-                var createRequest = _driveService.Files.Create(fileMetadata, stream, "application/octet-stream");
+                var createRequest = driveService.Files.Create(fileMetadata, stream, "application/octet-stream");
                 createRequest.Fields = "id, name, size, modifiedTime";
 
                 createRequest.ProgressChanged += p =>
@@ -192,53 +217,67 @@ public class GoogleDriveService : ICloudStorageService, IDisposable
                         progress?.Report((double)p.BytesSent / totalSize * 100);
                 };
 
-                result = await createRequest.UploadAsync();
+                result = await createRequest.UploadAsync(cancellationToken);
                 fileId = createRequest.ResponseBody?.Id ?? throw new Exception("アップロード後のファイルIDを取得できませんでした。");
             }
 
             if (result.Status != Google.Apis.Upload.UploadStatus.Completed)
+            {
+                if (result.Exception is OperationCanceledException) throw result.Exception;
+                cancellationToken.ThrowIfCancellationRequested();
+
                 throw new Exception($"アップロードに失敗しました: {result.Exception?.Message}");
+            }
 
             return fileId;
-        });
+        }, cancellationToken: cancellationToken);
     }
 
-    private async Task<string?> FindFileByNameAsync(string fileName)
+    private async Task<string?> FindFileByNameAsync(DriveService driveService, string fileName, CancellationToken cancellationToken)
     {
-        if (_driveService == null || _appFolderId == null) return null;
+        if (_appFolderId == null) return null;
 
-        var listRequest = _driveService.Files.List();
-        listRequest.Q = $"name = '{fileName.Replace("'", "\\'")}' and '{_appFolderId}' in parents and trashed = false";
+        var listRequest = driveService.Files.List();
+        listRequest.Q = $"name = '{EscapeQueryValue(fileName)}' and '{_appFolderId}' in parents and trashed = false";
         listRequest.Fields = "files(id)";
 
-        var result = await listRequest.ExecuteAsync();
+        var result = await listRequest.ExecuteAsync(cancellationToken);
         return result.Files.FirstOrDefault()?.Id;
     }
 
-    public async Task DownloadFileAsync(string remoteFileId, string localPath, IProgress<double>? progress = null)
+    private static string EscapeQueryValue(string value)
     {
-        if (_driveService == null)
-            throw new InvalidOperationException("認証されていません。");
-        
-        var fileRequest = _driveService.Files.Get(remoteFileId);
-        fileRequest.Fields = "size";
-        var fileInfo = await fileRequest.ExecuteAsync();
-        var totalSize = fileInfo.Size ?? 0;
+        return value.Replace("\\", "\\\\").Replace("'", "\\'");
+    }
 
-        var request = _driveService.Files.Get(remoteFileId);
+    public async Task DownloadFileAsync(string remoteFileId, string localPath,
+        IProgress<double>? progress = null, CancellationToken cancellationToken = default)
+    {
+        var driveService = EnsureAuthenticated();
 
         var directory = Path.GetDirectoryName(localPath);
         if (!string.IsNullOrEmpty(directory))
         {
             Directory.CreateDirectory(directory);
         }
-        
+
         var tempPath = localPath + ".tmp";
-        
+
         try
         {
-            await using (var stream = new FileStream(tempPath, FileMode.Create, FileAccess.Write))
+            await RetryHelper.ExecuteWithRetryAsync(async () =>
             {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var fileRequest = driveService.Files.Get(remoteFileId);
+                fileRequest.Fields = "size";
+                var fileInfo = await fileRequest.ExecuteAsync(cancellationToken);
+                var totalSize = fileInfo.Size ?? 0;
+
+                var request = driveService.Files.Get(remoteFileId);
+
+                await using var stream = new FileStream(tempPath, FileMode.Create, FileAccess.Write);
+
                 request.MediaDownloader.ProgressChanged += p =>
                 {
                     if (totalSize > 0)
@@ -247,36 +286,36 @@ public class GoogleDriveService : ICloudStorageService, IDisposable
                     }
                 };
 
-                await request.DownloadAsync(stream);
-            }
+                await request.DownloadAsync(stream, cancellationToken);
+            }, cancellationToken: cancellationToken);
 
-            if (File.Exists(localPath))
-            {
-                File.Delete(localPath);
-            }
-            File.Move(tempPath, localPath);
+            File.Move(tempPath, localPath, overwrite: true);
         }
         catch
         {
-            if (!File.Exists(tempPath)) throw;
-            
-            try
-            {
-                File.Delete(tempPath);
-            }
-            catch
-            {
-                // ignored
-            }
-
+            DeleteTempFileQuietly(tempPath);
             throw;
         }
     }
 
-    public async Task<List<CloudFile>> ListFilesAsync(string? folderId = null)
+    private static void DeleteTempFileQuietly(string tempPath)
     {
-        if (_driveService == null)
-            throw new InvalidOperationException("認証されていません。");
+        if (!File.Exists(tempPath)) return;
+
+        try
+        {
+            File.Delete(tempPath);
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[GoogleDrive] Failed to delete temporary file: {ex.Message}");
+        }
+    }
+
+    public async Task<List<CloudFile>> ListFilesAsync(string? folderId = null,
+        CancellationToken cancellationToken = default)
+    {
+        var driveService = EnsureAuthenticated();
 
         var targetFolderId = folderId ?? _appFolderId;
         var files = new List<CloudFile>();
@@ -284,20 +323,30 @@ public class GoogleDriveService : ICloudStorageService, IDisposable
 
         do
         {
-            var request = _driveService.Files.List();
-            request.Q = targetFolderId != null
-                ? $"'{targetFolderId}' in parents and trashed = false"
-                : "trashed = false";
-            request.Fields = "nextPageToken, files(id, name, mimeType, size, modifiedTime)";
-            request.OrderBy = "modifiedTime desc";
-            request.PageSize = 100;
-            
-            if (pageToken != null)
-                request.PageToken = pageToken;
+            cancellationToken.ThrowIfCancellationRequested();
 
-            var result = await request.ExecuteAsync();
+            var currentPageToken = pageToken;
 
-            files.AddRange(result.Files.Select(file => new CloudFile(file.Id, file.Name, file.MimeType, file.Size, file.ModifiedTimeDateTimeOffset?.DateTime)));
+            var result = await RetryHelper.ExecuteWithRetryAsync(async () =>
+            {
+                var request = driveService.Files.List();
+                request.Q = targetFolderId != null
+                    ? $"'{EscapeQueryValue(targetFolderId)}' in parents and trashed = false"
+                    : "trashed = false";
+                request.Fields = "nextPageToken, files(id, name, mimeType, size, modifiedTime)";
+                request.OrderBy = "modifiedTime desc";
+                request.PageSize = 100;
+
+                if (currentPageToken != null)
+                    request.PageToken = currentPageToken;
+
+                return await request.ExecuteAsync(cancellationToken);
+            }, cancellationToken: cancellationToken);
+
+            if (result.Files != null)
+            {
+                files.AddRange(result.Files.Select(file => new CloudFile(file.Id, file.Name, file.MimeType, file.Size, file.ModifiedTimeDateTimeOffset?.DateTime)));
+            }
 
             pageToken = result.NextPageToken;
         } while (!string.IsNullOrEmpty(pageToken));
@@ -305,23 +354,28 @@ public class GoogleDriveService : ICloudStorageService, IDisposable
         return files;
     }
 
-    public async Task DeleteFileAsync(string fileId)
+    public async Task DeleteFileAsync(string fileId, CancellationToken cancellationToken = default)
     {
-        if (_driveService == null)
-            throw new InvalidOperationException("認証されていません。");
+        var driveService = EnsureAuthenticated();
 
-        await _driveService.Files.Delete(fileId).ExecuteAsync();
+        await RetryHelper.ExecuteWithRetryAsync(
+            () => driveService.Files.Delete(fileId).ExecuteAsync(cancellationToken),
+            cancellationToken: cancellationToken);
     }
 
-    private async Task<string?> GetOrCreateAppFolderAsync()
+    private DriveService EnsureAuthenticated()
     {
-        if (_driveService == null) return null;
+        return _driveService
+               ?? throw new InvalidOperationException("認証されていません。");
+    }
 
-        var listRequest = _driveService.Files.List();
+    private async Task<string?> GetOrCreateAppFolderAsync(DriveService driveService, CancellationToken cancellationToken)
+    {
+        var listRequest = driveService.Files.List();
         listRequest.Q = $"name = '{FolderName}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false";
         listRequest.Fields = "files(id, name)";
 
-        var result = await listRequest.ExecuteAsync();
+        var result = await listRequest.ExecuteAsync(cancellationToken);
 
         if (result.Files.Count > 0)
         {
@@ -334,10 +388,10 @@ public class GoogleDriveService : ICloudStorageService, IDisposable
             MimeType = "application/vnd.google-apps.folder"
         };
 
-        var createRequest = _driveService.Files.Create(folderMetadata);
+        var createRequest = driveService.Files.Create(folderMetadata);
         createRequest.Fields = "id";
 
-        var folder = await createRequest.ExecuteAsync();
+        var folder = await createRequest.ExecuteAsync(cancellationToken);
         return folder.Id;
     }
 }

@@ -12,16 +12,25 @@ public static class YmmPathFinder
     public static string? Find()
     {
         var processes = Process.GetProcessesByName(ProcessName);
-        if (processes.Length > 0)
+        try
         {
-            try
+            foreach (var process in processes)
             {
-                return processes[0].MainModule?.FileName;
+                try
+                {
+                    var fileName = process.MainModule?.FileName;
+                    if (!string.IsNullOrEmpty(fileName) && File.Exists(fileName))
+                        return fileName;
+                }
+                catch
+                {
+                    // ignored
+                }
             }
-            catch
-            {
-                // ignored
-            }
+        }
+        finally
+        {
+            foreach (var process in processes) process.Dispose();
         }
 
         try

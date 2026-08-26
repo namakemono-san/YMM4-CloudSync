@@ -31,11 +31,13 @@ public static class Program
 
     public static void LaunchYmm(string ymmPath, string ymmpPath)
     {
-        Process.Start(new ProcessStartInfo
+        var startInfo = new ProcessStartInfo
         {
             FileName = ymmPath,
-            Arguments = $"\"{ymmpPath}\"",
             UseShellExecute = true
-        });
+        };
+        startInfo.ArgumentList.Add(ymmpPath);
+
+        Process.Start(startInfo);
     }
 }

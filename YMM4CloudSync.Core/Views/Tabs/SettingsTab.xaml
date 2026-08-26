@@ -46,7 +46,7 @@
                         <Label Grid.Row="0" Grid.Column="0" Content="プロジェクト保存先" VerticalAlignment="Center" Margin="0,0,10,0"/>
                         
                         <TextBox Grid.Row="0" Grid.Column="1" VerticalContentAlignment="Center" 
-                                 Text="{Binding ProjectDirectory.Value, UpdateSourceTrigger=PropertyChanged, Delay=1}"/>
+                                 Text="{Binding ProjectDirectory.Value, UpdateSourceTrigger=PropertyChanged, Delay=500}"/>
                         
                         <StackPanel Grid.Row="0" Grid.Column="2" Orientation="Horizontal" Margin="5,0,0,0">
                             <Button Content="..." Command="{Binding BrowseProjectDirCommand}" 
@@ -75,7 +75,7 @@
                         <Label Grid.Row="0" Grid.Column="0" Content="キャッシュ保存先" VerticalAlignment="Center" Margin="0,0,10,0"/>
 
                         <TextBox Grid.Row="0" Grid.Column="1" VerticalContentAlignment="Center"
-                                 Text="{Binding CacheDirectory.Value, UpdateSourceTrigger=PropertyChanged, Delay=1}"/>
+                                 Text="{Binding CacheDirectory.Value, UpdateSourceTrigger=PropertyChanged, Delay=500}"/>
 
                         <StackPanel Grid.Row="0" Grid.Column="2" Orientation="Horizontal" Margin="5,0,0,0">
                             <Button Content="..." Command="{Binding BrowseCacheDirCommand}" 

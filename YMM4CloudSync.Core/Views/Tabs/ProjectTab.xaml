@@ -119,7 +119,20 @@
 
         <StackPanel Grid.Row="2" x:Name="ProgressPanel" Visibility="Collapsed" Margin="0,0,0,10">
             <TextBlock x:Name="ProgressText" Text="処理中..." Margin="0,0,0,5"/>
-            <ProgressBar x:Name="ProgressBar" Height="20" Minimum="0" Maximum="100"/>
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <ProgressBar Grid.Column="0" x:Name="ProgressBar" Height="20" Minimum="0" Maximum="100"/>
+                <Button Grid.Column="1"
+                        x:Name="CancelButton"
+                        Margin="6,0,0,0"
+                        Padding="8,0"
+                        Height="20"
+                        Content="中止"
+                        Click="OnCancelClick"/>
+            </Grid>
         </StackPanel>
 
         <Button Grid.Row="3"

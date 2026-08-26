@@ -1,6 +1,6 @@
-﻿using System.IO;
+﻿using System.Diagnostics;
+using System.IO;
 using System.Net.Http;
-using System.Security.Cryptography;
 using Microsoft.Identity.Client;
 using System.Net.Http.Headers;
 using System.Text;
@@ -47,10 +47,12 @@ public sealed class OneDriveService : ICloudStorageService, IDisposable
     {
         if (_disposed) return;
 
+        _account = null;
+        _pca = null;
         _disposed = true;
     }
 
-    public async Task<bool> AuthenticateAsync()
+    public async Task<bool> AuthenticateAsync(CancellationToken cancellationToken = default)
     {
         try
         {
@@ -59,7 +61,7 @@ public sealed class OneDriveService : ICloudStorageService, IDisposable
             var accounts = await _pca!.GetAccountsAsync();
             _account = accounts.FirstOrDefault();
 
-            var silent = await _pca.AcquireTokenSilent(Scopes, _account).ExecuteAsync();
+            var silent = await _pca.AcquireTokenSilent(Scopes, _account).ExecuteAsync(cancellationToken);
             _account = silent.Account;
 
             return true;
@@ -71,7 +73,7 @@ public sealed class OneDriveService : ICloudStorageService, IDisposable
         }
     }
 
-    public async Task<bool> AuthenticateInteractiveAsync()
+    public async Task<bool> AuthenticateInteractiveAsync(CancellationToken cancellationToken = default)
     {
         try
         {
@@ -79,10 +81,15 @@ public sealed class OneDriveService : ICloudStorageService, IDisposable
 
             var interactive = await _pca!.AcquireTokenInteractive(Scopes)
                 .WithPrompt(Prompt.SelectAccount)
-                .ExecuteAsync();
+                .ExecuteAsync(cancellationToken);
 
             _account = interactive.Account;
             return true;
+        }
+        catch (OperationCanceledException)
+        {
+            _account = null;
+            return false;
         }
         catch (Exception ex)
         {
@@ -92,7 +99,7 @@ public sealed class OneDriveService : ICloudStorageService, IDisposable
         }
     }
 
-    public async Task LogoutAsync()
+    public async Task LogoutAsync(CancellationToken cancellationToken = default)
     {
         if (_pca != null)
         {
@@ -106,7 +113,8 @@ public sealed class OneDriveService : ICloudStorageService, IDisposable
         SecureStorageHelper.Delete(TokenCachePath);
     }
 
-    public async Task<List<CloudFile>> ListFilesAsync(string? folderId = null)
+    public async Task<List<CloudFile>> ListFilesAsync(string? folderId = null,
+        CancellationToken cancellationToken = default)
     {
         EnsureAuthenticated();
 
@@ -114,34 +122,68 @@ public sealed class OneDriveService : ICloudStorageService, IDisposable
             ? $"{GraphBase}/me/drive/special/approot/children?$orderby=lastModifiedDateTime desc"
             : $"{GraphBase}/me/drive/items/{folderId}/children?$orderby=lastModifiedDateTime desc";
 
-        using var resp = await SendAsync(HttpMethod.Get, url, null);
-        await EnsureSuccessOrThrowAsync(resp);
-
-        await using var s = await resp.Content.ReadAsStreamAsync();
-        var doc = await JsonDocument.ParseAsync(s);
-
         var list = new List<CloudFile>();
 
-        foreach (var item in doc.RootElement.GetProperty("value").EnumerateArray())
-        {
-            var id = item.GetProperty("id").GetString() ?? "";
-            var name = item.GetProperty("name").GetString() ?? "";
-            var size = item.TryGetProperty("size", out var sz) ? sz.GetInt64() : (long?)null;
-            var modified = item.TryGetProperty("lastModifiedDateTime", out var lm) ? lm.GetDateTime() : (DateTime?)null;
-            var isFolder = item.TryGetProperty("folder", out _);
+        string? nextUrl = url;
+        var isFirstPage = true;
 
-            list.Add(new CloudFile(
-                id,
-                name,
-                isFolder ? "application/vnd.microsoft.folder" : "application/octet-stream",
-                size,
-                modified));
+        while (nextUrl != null)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var pageUrl = nextUrl;
+            var allowMissing = isFirstPage;
+            isFirstPage = false;
+
+            var page = await RetryHelper.ExecuteWithRetryAsync(async () =>
+            {
+                using var resp = await SendAsync(HttpMethod.Get, pageUrl, null,
+                    cancellationToken: cancellationToken);
+
+                if (allowMissing && resp.StatusCode == System.Net.HttpStatusCode.NotFound)
+                {
+                    return (Items: new List<CloudFile>(), NextLink: (string?)null);
+                }
+
+                await EnsureSuccessOrThrowAsync(resp);
+
+                await using var s = await resp.Content.ReadAsStreamAsync(cancellationToken);
+                using var doc = await JsonDocument.ParseAsync(s, cancellationToken: cancellationToken);
+
+                var items = new List<CloudFile>();
+
+                foreach (var item in doc.RootElement.GetProperty("value").EnumerateArray())
+                {
+                    var id = item.GetProperty("id").GetString() ?? "";
+                    var name = item.GetProperty("name").GetString() ?? "";
+                    var size = item.TryGetProperty("size", out var sz) ? sz.GetInt64() : (long?)null;
+                    var modified = item.TryGetProperty("lastModifiedDateTime", out var lm) ? lm.GetDateTime() : (DateTime?)null;
+                    var isFolder = item.TryGetProperty("folder", out _);
+
+                    items.Add(new CloudFile(
+                        id,
+                        name,
+                        isFolder ? "application/vnd.microsoft.folder" : "application/octet-stream",
+                        size,
+                        modified));
+                }
+
+                var nextLink = doc.RootElement.TryGetProperty("@odata.nextLink", out var next)
+                    ? next.GetString()
+                    : null;
+
+                return (Items: items, NextLink: nextLink);
+            }, cancellationToken: cancellationToken);
+
+            list.AddRange(page.Items);
+            nextUrl = page.NextLink;
         }
 
         return list;
     }
 
-    public async Task<string> UploadFileAsync(string localPath, string remotePath, IProgress<double>? progress = null)
+    public async Task<string> UploadFileAsync(string localPath, string remotePath,
+        IProgress<double>? progress = null, CancellationToken cancellationToken = default)
     {
         EnsureAuthenticated();
 
@@ -152,101 +194,137 @@ public sealed class OneDriveService : ICloudStorageService, IDisposable
 
         if (fileInfo.Length > ChunkThresholdBytes)
         {
-            return await UploadLargeFileAsync(localPath, remotePath, progress);
+            return await UploadLargeFileAsync(localPath, remotePath, progress, cancellationToken);
         }
 
         return await RetryHelper.ExecuteWithRetryAsync(async () =>
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             await using var fs = new FileStream(localPath, FileMode.Open, FileAccess.Read, FileShare.Read);
             var url = $"{GraphBase}/me/drive/special/approot:/{EscapePath(remotePath)}:/content";
 
             using var content = new ProgressStreamContent(fs, fs.Length, progress);
             content.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
 
-            using var resp = await SendAsync(HttpMethod.Put, url, content);
+            using var resp = await SendAsync(HttpMethod.Put, url, content,
+                cancellationToken: cancellationToken);
             await EnsureSuccessOrThrowAsync(resp);
 
-            await using var s = await resp.Content.ReadAsStreamAsync();
-            var doc = await JsonDocument.ParseAsync(s);
+            await using var s = await resp.Content.ReadAsStreamAsync(cancellationToken);
+            using var doc = await JsonDocument.ParseAsync(s, cancellationToken: cancellationToken);
 
             return doc.RootElement.GetProperty("id").GetString() ?? "";
-        });
+        }, cancellationToken: cancellationToken);
     }
 
-    private async Task<string> UploadLargeFileAsync(string localPath, string remotePath, IProgress<double>? progress)
+    private async Task<string> UploadLargeFileAsync(string localPath, string remotePath,
+        IProgress<double>? progress, CancellationToken cancellationToken)
     {
-        var sessionUrl = await CreateUploadSessionAsync(remotePath);
-        
-        await using var fs = new FileStream(localPath, FileMode.Open, FileAccess.Read, FileShare.Read);
-        var totalSize = fs.Length;
-        // OneDrive recommends chunk sizes that are multiples of 320 KiB (327,680 bytes)
-        // Using 3.2MB (10 * 320KB) for optimal upload performance
-        // See: https://learn.microsoft.com/en-us/graph/api/driveitem-createuploadsession
-        const int oneDriveRecommendedChunkUnit = 320 * 1024;
-        const int chunkMultiplier = 10;
-        const int chunkSize = chunkMultiplier * oneDriveRecommendedChunkUnit;
+        var sessionUrl = await CreateUploadSessionAsync(remotePath, cancellationToken);
 
-        var buffer = new byte[chunkSize];
-        long uploaded = 0;
-        string? fileId = null;
-
-        while (uploaded < totalSize)
+        try
         {
-            var bytesToRead = (int)Math.Min(chunkSize, totalSize - uploaded);
-            var bytesRead = await fs.ReadAsync(buffer.AsMemory(0, bytesToRead));
-            
-            if (bytesRead == 0) break;
+            await using var fs = new FileStream(localPath, FileMode.Open, FileAccess.Read, FileShare.Read);
+            var totalSize = fs.Length;
+            // OneDrive recommends chunk sizes that are multiples of 320 KiB (327,680 bytes)
+            // Using 3.2MB (10 * 320KB) for optimal upload performance
+            // See: https://learn.microsoft.com/en-us/graph/api/driveitem-createuploadsession
+            const int oneDriveRecommendedChunkUnit = 320 * 1024;
+            const int chunkMultiplier = 10;
+            const int chunkSize = chunkMultiplier * oneDriveRecommendedChunkUnit;
 
-            var rangeStart = uploaded;
-            var rangeEnd = uploaded + bytesRead - 1;
+            var buffer = new byte[chunkSize];
+            long uploaded = 0;
+            string? fileId = null;
 
-            fileId = await RetryHelper.ExecuteWithRetryAsync(async () =>
+            while (uploaded < totalSize)
             {
-                using var content = new ByteArrayContent(buffer, 0, bytesRead);
-                content.Headers.Add("Content-Range", $"bytes {rangeStart}-{rangeEnd}/{totalSize}");
-                content.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
+                cancellationToken.ThrowIfCancellationRequested();
 
-                using var req = new HttpRequestMessage(HttpMethod.Put, sessionUrl);
-                req.Content = content;
-                using var resp = await SharedHttpClient.SendAsync(req);
+                var bytesToRead = (int)Math.Min(chunkSize, totalSize - uploaded);
+                var bytesRead = await fs.ReadAsync(buffer.AsMemory(0, bytesToRead), cancellationToken);
 
-                if (!resp.IsSuccessStatusCode && resp.StatusCode != System.Net.HttpStatusCode.Accepted)
+                if (bytesRead == 0) break;
+
+                var rangeStart = uploaded;
+                var rangeEnd = uploaded + bytesRead - 1;
+
+                fileId = await RetryHelper.ExecuteWithRetryAsync(async () =>
                 {
-                    await EnsureSuccessOrThrowAsync(resp);
-                }
+                    using var content = new ByteArrayContent(buffer, 0, bytesRead);
+                    content.Headers.Add("Content-Range", $"bytes {rangeStart}-{rangeEnd}/{totalSize}");
+                    content.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
 
-                await using var s = await resp.Content.ReadAsStreamAsync();
-                var doc = await JsonDocument.ParseAsync(s);
+                    using var req = new HttpRequestMessage(HttpMethod.Put, sessionUrl);
+                    req.Content = content;
+                    using var resp = await SharedHttpClient.SendAsync(req, cancellationToken);
 
-                return doc.RootElement.TryGetProperty("id", out var idProp) ? idProp.GetString() : null;
-            });
+                    if (!resp.IsSuccessStatusCode && resp.StatusCode != System.Net.HttpStatusCode.Accepted)
+                    {
+                        await EnsureSuccessOrThrowAsync(resp);
+                    }
 
-            uploaded += bytesRead;
-            progress?.Report(uploaded * 100.0 / totalSize);
+                    await using var s = await resp.Content.ReadAsStreamAsync(cancellationToken);
+                    using var doc = await JsonDocument.ParseAsync(s, cancellationToken: cancellationToken);
+
+                    return doc.RootElement.TryGetProperty("id", out var idProp) ? idProp.GetString() : null;
+                }, cancellationToken: cancellationToken);
+
+                uploaded += bytesRead;
+                progress?.Report(uploaded * 100.0 / totalSize);
+            }
+
+            return fileId ?? throw new InvalidOperationException("アップロードが完了しましたが、ファイルIDを取得できませんでした。");
         }
-
-        return fileId ?? throw new InvalidOperationException("アップロードが完了しましたが、ファイルIDを取得できませんでした。");
+        catch
+        {
+            await CancelUploadSessionQuietlyAsync(sessionUrl);
+            throw;
+        }
     }
 
-    private async Task<string> CreateUploadSessionAsync(string remotePath)
+    private async Task<string> CreateUploadSessionAsync(string remotePath, CancellationToken cancellationToken)
     {
         var url = $"{GraphBase}/me/drive/special/approot:/{EscapePath(remotePath)}:/createUploadSession";
-        
+
         var body = new { item = new { name = Path.GetFileName(remotePath) } };
         var json = JsonSerializer.Serialize(body);
-        using var content = new StringContent(json, Encoding.UTF8, "application/json");
-        
-        using var resp = await SendAsync(HttpMethod.Post, url, content);
-        await EnsureSuccessOrThrowAsync(resp);
-        
-        await using var s = await resp.Content.ReadAsStreamAsync();
-        var doc = await JsonDocument.ParseAsync(s);
-        
-        return doc.RootElement.GetProperty("uploadUrl").GetString() 
-               ?? throw new InvalidOperationException("アップロードURLを取得できませんでした。");
+
+        return await RetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            using var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+            using var resp = await SendAsync(HttpMethod.Post, url, content,
+                cancellationToken: cancellationToken);
+            await EnsureSuccessOrThrowAsync(resp);
+
+            await using var s = await resp.Content.ReadAsStreamAsync(cancellationToken);
+            using var doc = await JsonDocument.ParseAsync(s, cancellationToken: cancellationToken);
+
+            return doc.RootElement.GetProperty("uploadUrl").GetString()
+                   ?? throw new InvalidOperationException("アップロードURLを取得できませんでした。");
+        }, cancellationToken: cancellationToken);
     }
 
-    public async Task DownloadFileAsync(string remoteFileId, string localPath, IProgress<double>? progress = null)
+    private static async Task CancelUploadSessionQuietlyAsync(string sessionUrl)
+    {
+        try
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Delete, sessionUrl);
+            using var resp = await SharedHttpClient.SendAsync(req);
+
+            if (!resp.IsSuccessStatusCode)
+                Debug.WriteLine($"[OneDrive] Upload session cancel returned HTTP {(int)resp.StatusCode}.");
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[OneDrive] Failed to cancel upload session: {ex.Message}");
+        }
+    }
+
+    public async Task DownloadFileAsync(string remoteFileId, string localPath,
+        IProgress<double>? progress = null, CancellationToken cancellationToken = default)
     {
         EnsureAuthenticated();
 
@@ -260,44 +338,55 @@ public sealed class OneDriveService : ICloudStorageService, IDisposable
 
         try
         {
-            using var resp = await SendAsync(HttpMethod.Get, url, null, HttpCompletionOption.ResponseHeadersRead);
-            await EnsureSuccessOrThrowAsync(resp);
-
-            var total = resp.Content.Headers.ContentLength ?? 0;
-
-            await using var input = await resp.Content.ReadAsStreamAsync();
-            await using (var output = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None))
+            await RetryHelper.ExecuteWithRetryAsync(async () =>
             {
-                await CopyWithProgressAsync(input, output, total, progress);
-            }
+                cancellationToken.ThrowIfCancellationRequested();
 
-            if (File.Exists(localPath))
-            {
-                File.Delete(localPath);
-            }
-            File.Move(tempPath, localPath);
+                using var resp = await SendAsync(HttpMethod.Get, url, null,
+                    HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+                await EnsureSuccessOrThrowAsync(resp);
+
+                var total = resp.Content.Headers.ContentLength ?? 0;
+
+                await using var input = await resp.Content.ReadAsStreamAsync(cancellationToken);
+                await using var output = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None);
+
+                await CopyWithProgressAsync(input, output, total, progress, cancellationToken);
+            }, cancellationToken: cancellationToken);
+
+            File.Move(tempPath, localPath, overwrite: true);
         }
         catch
         {
-            if (!File.Exists(tempPath)) throw;
-            try
-            {
-                File.Delete(tempPath);
-            }
-            catch
-            {
-                // ignored
-            }
+            DeleteTempFileQuietly(tempPath);
             throw;
         }
     }
 
-    public async Task DeleteFileAsync(string fileId)
+    private static void DeleteTempFileQuietly(string tempPath)
+    {
+        if (!File.Exists(tempPath)) return;
+
+        try
+        {
+            File.Delete(tempPath);
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[OneDrive] Failed to delete temporary file: {ex.Message}");
+        }
+    }
+
+    public async Task DeleteFileAsync(string fileId, CancellationToken cancellationToken = default)
     {
         EnsureAuthenticated();
 
-        using var resp = await SendAsync(HttpMethod.Delete, $"{GraphBase}/me/drive/items/{fileId}", null);
-        await EnsureSuccessOrThrowAsync(resp);
+        await RetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            using var resp = await SendAsync(HttpMethod.Delete, $"{GraphBase}/me/drive/items/{fileId}", null,
+                cancellationToken: cancellationToken);
+            await EnsureSuccessOrThrowAsync(resp);
+        }, cancellationToken: cancellationToken);
     }
 
     private void EnsureClient()
@@ -320,14 +409,14 @@ public sealed class OneDriveService : ICloudStorageService, IDisposable
             throw new InvalidOperationException("OneDrive に連携されていません。\n連携タブからサインインしてください。");
     }
 
-    private async Task<string> GetAccessTokenAsync()
+    private async Task<string> GetAccessTokenAsync(CancellationToken cancellationToken)
     {
         EnsureClient();
 
         if (_account == null)
             throw new InvalidOperationException("OneDrive に連携されていません。\n連携タブからサインインしてください。");
 
-        var result = await _pca!.AcquireTokenSilent(Scopes, _account).ExecuteAsync();
+        var result = await _pca!.AcquireTokenSilent(Scopes, _account).ExecuteAsync(cancellationToken);
         return result.AccessToken;
     }
 
@@ -335,13 +424,14 @@ public sealed class OneDriveService : ICloudStorageService, IDisposable
         HttpMethod method,
         string url,
         HttpContent? content,
-        HttpCompletionOption completion = HttpCompletionOption.ResponseContentRead)
+        HttpCompletionOption completion = HttpCompletionOption.ResponseContentRead,
+        CancellationToken cancellationToken = default)
     {
-        var token = await GetAccessTokenAsync();
+        var token = await GetAccessTokenAsync(cancellationToken);
         using var req = new HttpRequestMessage(method, url);
         req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
         if (content != null) req.Content = content;
-        return await SharedHttpClient.SendAsync(req, completion);
+        return await SharedHttpClient.SendAsync(req, completion, cancellationToken);
     }
 
     private static async Task EnsureSuccessOrThrowAsync(HttpResponseMessage resp)
@@ -366,7 +456,7 @@ public sealed class OneDriveService : ICloudStorageService, IDisposable
         }
         catch (Exception ex)
         {
-            SentrySdk.CaptureException(ex);
+            SentryReporter.Capture(ex);
         }
 
         var message = code switch
@@ -389,17 +479,18 @@ public sealed class OneDriveService : ICloudStorageService, IDisposable
         throw new InvalidOperationException($"{message}");
     }
 
-    private static async Task CopyWithProgressAsync(Stream input, Stream output, long total, IProgress<double>? progress)
+    private static async Task CopyWithProgressAsync(Stream input, Stream output, long total,
+        IProgress<double>? progress, CancellationToken cancellationToken)
     {
         var buffer = new byte[64 * 1024];
         long done = 0;
 
         while (true)
         {
-            var read = await input.ReadAsync(buffer);
+            var read = await input.ReadAsync(buffer, cancellationToken);
             if (read == 0) break;
 
-            await output.WriteAsync(buffer.AsMemory(0, read));
+            await output.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
             done += read;
 
             if (total > 0)

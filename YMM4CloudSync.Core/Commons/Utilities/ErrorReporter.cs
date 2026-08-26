@@ -7,7 +7,7 @@ public static class ErrorReporter
 {
     public static void ReportAndShowDialog(Exception ex)
     {
-        var sentryId = SentrySdk.CaptureException(ex);
+        var sentryId = SentryReporter.Capture(ex);
 
         var application = Application.Current;
         if (application == null)

@@ -32,7 +32,7 @@ public static class HashHelper
         using var sha256 = SHA256.Create();
         
         var files = Directory.GetFiles(directory, "*", SearchOption.AllDirectories)
-            .Where(f => !f.EndsWith("meta.json", StringComparison.OrdinalIgnoreCase));
+            .Where(f => !IsPackageMetadata(directory, f));
 
         if (!includeLegacyFiles)
         {
@@ -66,5 +66,12 @@ public static class HashHelper
 
         sha256.TransformFinalBlock([], 0, 0);
         return Convert.ToHexString(sha256.Hash!).ToLowerInvariant();
+    }
+
+    public static bool IsPackageMetadata(string directory, string filePath)
+    {
+        var relativePath = Path.GetRelativePath(directory, filePath).Replace('\\', '/');
+
+        return relativePath.Equals("meta.json", StringComparison.OrdinalIgnoreCase);
     }
 }

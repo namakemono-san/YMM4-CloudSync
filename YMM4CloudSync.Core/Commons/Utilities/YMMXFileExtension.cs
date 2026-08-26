@@ -46,18 +46,11 @@ public class YmmxFileExtension(string launcherPath, string iconPath)
     [SuppressMessage("Performance", "CA1822:メンバーを static に設定します")]
     public void Unregister()
     {
-        using (var hkcu = RegistryKey.OpenBaseKey(RegistryHive.CurrentUser, RegistryView.Default))
-        using (var classes = hkcu.OpenSubKey(@"Software\Classes", true))
-        {
-            classes?.DeleteSubKeyTree(Extension, false);
-            classes?.DeleteSubKeyTree(ProgId, false);
-        }
+        using var hkcu = RegistryKey.OpenBaseKey(RegistryHive.CurrentUser, RegistryView.Default);
+        using var classes = hkcu.OpenSubKey(@"Software\Classes", true);
 
-        using (var hklm = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Default))
-        using (var classes = hklm.OpenSubKey(@"SOFTWARE\Classes", true))
-        {
-            classes?.DeleteSubKeyTree(ProgId, false);
-        }
+        classes?.DeleteSubKeyTree(Extension, false);
+        classes?.DeleteSubKeyTree(ProgId, false);
     }
 
     private string GetCommand() => $"\"{launcherPath}\" \"%1\"";

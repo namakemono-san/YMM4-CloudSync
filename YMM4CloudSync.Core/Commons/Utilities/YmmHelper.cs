@@ -1,4 +1,5 @@
-﻿using System.Reflection;
+﻿using System.Diagnostics;
+using System.Reflection;
 using System.Windows;
 using Microsoft.Win32;
 
@@ -42,6 +43,51 @@ public static class YmmHelper
         return ExtractValue<string>(filePathValue);
     }
 
+    public static bool? IsProjectEmpty()
+    {
+        try
+        {
+            var dataContext = GetMainWindowDataContext();
+            if (dataContext == null) return null;
+
+            if (ReadBool(dataContext, "IsEmptyProject") is { } isEmpty) return isEmpty;
+            if (ReadBool(dataContext, "HasAnySceneOrSceneItems") is { } hasItems) return !hasItems;
+
+            return null;
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[YMM4CS][YmmHelper] Failed to read project state: {ex.Message}");
+            return null;
+        }
+    }
+
+    private static bool? ReadBool(object dataContext, string propertyName)
+    {
+        var property = dataContext.GetType().GetProperty(propertyName, BindingFlags.Public | BindingFlags.Instance);
+
+        return property == null ? null : UnwrapBool(property.GetValue(dataContext), 0);
+    }
+
+    private static bool? UnwrapBool(object? value, int depth)
+    {
+        const int maxDepth = 4;
+
+        switch (value)
+        {
+            case null:
+                return null;
+            case bool result:
+                return result;
+        }
+
+        if (depth >= maxDepth) return null;
+
+        var valueProperty = value.GetType().GetProperty("Value", BindingFlags.Public | BindingFlags.Instance);
+
+        return valueProperty == null ? null : UnwrapBool(valueProperty.GetValue(value), depth + 1);
+    }
+
     public static SaveResult SaveProject(string? path = null)
     {
         try
@@ -77,7 +123,7 @@ public static class YmmHelper
         }
         catch (Exception ex)
         {
-            SentrySdk.CaptureException(ex);
+            SentryReporter.Capture(ex);
             return SaveResult.Failed;
         }
     }

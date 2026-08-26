@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using System.IO;
 using System.Reactive.Linq;
 using System.Reflection;
@@ -10,7 +10,6 @@ using YMM4CloudSync.Core.Commons.License;
 using YMM4CloudSync.Core.Commons.Utilities;
 using YMM4CloudSync.Core.Models;
 using YMM4CloudSync.Core.Services;
-using YukkuriMovieMaker.Commons;
 
 namespace YMM4CloudSync.Core.ViewModels;
 
@@ -39,13 +38,10 @@ public class ToolViewModel : IDisposable
     public ReactiveCommand ResetProjectDirCommand { get; }
     public ReactiveCommand ResetCacheDirCommand { get; }
     
-    private static string DefaultProjectDir => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "YMM4CloudSync", "Projects");
+    private static string DefaultProjectDir => PathHelper.DefaultProjectDirectory;
 
-    private static string DefaultCacheDir => Path.Combine(
-        Path.GetTempPath(), "YMM4CloudSync");
-    
+    private static string DefaultCacheDir => PathHelper.DefaultCacheDirectory;
+
     public ToolViewModel()
     {
         Settings = SettingsManager.Load();
@@ -69,25 +65,17 @@ public class ToolViewModel : IDisposable
         CacheDirectory = new ReactiveProperty<string>(Settings.CacheDirectory)
             .AddTo(_disposables);
 
-        ProjectDirectory.Subscribe(x => 
-        {
-            Settings.ProjectDirectory = x;
-            SettingsManager.Save(Settings);
-        }).AddTo(_disposables);
+        ProjectDirectory.Subscribe(x => Settings.ProjectDirectory = x).AddTo(_disposables);
 
-        CacheDirectory.Subscribe(x => 
-        {
-            Settings.CacheDirectory = x;
-            SettingsManager.Save(Settings);
-        }).AddTo(_disposables);
+        CacheDirectory.Subscribe(x => Settings.CacheDirectory = x).AddTo(_disposables);
 
         ProjectDirectoryPreview = ProjectDirectory
-            .Select(ReplaceSpecialTags)
+            .Select(PathHelper.ResolveProjectDirectory)
             .ToReadOnlyReactivePropertySlim()
             .AddTo(_disposables);
 
         CacheDirectoryPreview = CacheDirectory
-            .Select(ReplaceSpecialTags)
+            .CombineLatest(ProjectDirectory, (cache, project) => PathHelper.ResolvePath(cache, project))
             .ToReadOnlyReactivePropertySlim()
             .AddTo(_disposables);
 
@@ -116,8 +104,12 @@ public class ToolViewModel : IDisposable
             .AddTo(_disposables);
     }
     
+    private int _autoConnectState;
+
     public async Task TryAutoConnectAsync()
     {
+        if (Interlocked.CompareExchange(ref _autoConnectState, 1, 0) != 0) return;
+
         foreach (var item in CloudServices)
         {
             try
@@ -168,26 +160,7 @@ public class ToolViewModel : IDisposable
         CurrentLicense.Value = Licenses.FirstOrDefault();
     }
 
-    private static string ReplaceSpecialTags(string? rawPath)
-    {
-        if (string.IsNullOrWhiteSpace(rawPath)) return "";
-
-        try
-        {
-            var path = rawPath
-                .Replace("<YMMUserDir>", AppDirectories.UserDirectory)
-                .Replace("<Desktop>", Environment.GetFolderPath(Environment.SpecialFolder.Desktop))
-                .Replace("<Documents>", Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments));
-
-            return path;
-        }
-        catch
-        {
-            return rawPath;
-        }
-    }
-
-    private static string? SelectFolder(string description, string? initialPath)
+    private string? SelectFolder(string description, string? initialPath)
     {
         using var dialog = new FolderBrowserDialog();
         dialog.Description = description;
@@ -196,8 +169,8 @@ public class ToolViewModel : IDisposable
 
         if (string.IsNullOrEmpty(initialPath))
             return dialog.ShowDialog() == DialogResult.OK ? dialog.SelectedPath : null;
-        
-        var resolvedPath = ReplaceSpecialTags(initialPath);
+
+        var resolvedPath = PathHelper.ResolvePath(initialPath, ProjectDirectory.Value);
         if (Directory.Exists(resolvedPath))
         {
             dialog.SelectedPath = resolvedPath;

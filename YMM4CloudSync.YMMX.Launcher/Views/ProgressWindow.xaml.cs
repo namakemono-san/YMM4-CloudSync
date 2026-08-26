@@ -1,4 +1,5 @@
 ﻿using System.IO;
+using System.Security;
 using System.Windows;
 using YMM4CloudSync.YMMX.Core;
 using YMM4CloudSync.YMMX.Core.Commons;
@@ -39,6 +40,15 @@ public partial class ProgressWindow : Window
                 return;
             }
 
+            if (result.ExternalReferences.Count > 0)
+            {
+                MessageBox.Show(
+                    ExternalReferenceNotice.Build(result.ExternalReferences),
+                    "確認",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+            }
+
             Progress.IsIndeterminate = false;
             Progress.Value = 100;
             PercentText.Text = "100%";
@@ -46,7 +56,7 @@ public partial class ProgressWindow : Window
 
             LaunchYmm(result.YmmpPath);
         }
-        catch (InvalidOperationException ex)
+        catch (Exception ex) when (ex is InvalidOperationException or SecurityException or InvalidDataException)
         {
             MessageBox.Show(ex.Message, "YMM4 Cloud Sync", MessageBoxButton.OK, MessageBoxImage.Warning);
             Close();
@@ -86,9 +96,12 @@ public partial class ProgressWindow : Window
 
     private string GetOutputDirectory()
     {
-        var appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        var configured = UserSettingsReader.ReadProjectDirectory();
+        var projectRoot = PathTagResolver.ResolveProjectDirectory(configured, null);
+
         var fileName = Path.GetFileNameWithoutExtension(_ymmxPath);
-        return Path.Combine(appData, "YMM4CloudSync", "Projects", fileName);
+
+        return PathTagResolver.CombineWithin(projectRoot, fileName, "project");
     }
 
     private void LaunchYmm(string ymmpPath)

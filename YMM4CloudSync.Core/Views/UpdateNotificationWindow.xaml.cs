@@ -7,13 +7,15 @@ namespace YMM4CloudSync.Core.Views;
 
 public partial class UpdateNotificationWindow : Window
 {
+    private const string ReleasesUrl = "https://github.com/namakemono-san/YMM4-CloudSync/releases";
+
     private readonly string _downloadUrl;
 
     public UpdateNotificationWindow(ReleaseInfo info)
     {
         InitializeComponent();
 
-        _downloadUrl = info.HtmlUrl ?? "https://github.com/namakemono-san/YMM4-CloudSync/releases";
+        _downloadUrl = ToSafeWebUrl(info.HtmlUrl) ?? ReleasesUrl;
 
         var currentVersion = Assembly.GetExecutingAssembly().GetName().Version;
         CurrentVersionText.Text = currentVersion?.ToString() ?? "Unknown";
@@ -41,5 +43,16 @@ public partial class UpdateNotificationWindow : Window
     private void OnCloseClick(object sender, RoutedEventArgs e)
     {
         Close();
+    }
+
+    private static string? ToSafeWebUrl(string? candidate)
+    {
+        if (string.IsNullOrWhiteSpace(candidate)) return null;
+
+        if (!Uri.TryCreate(candidate, UriKind.Absolute, out var uri)) return null;
+
+        var isWebScheme = uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps;
+
+        return isWebScheme && !uri.IsFile && !uri.IsUnc ? uri.AbsoluteUri : null;
     }
 }

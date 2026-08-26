@@ -1,6 +1,7 @@
 ﻿using System.Diagnostics;
 using System.IO;
 using System.Reflection;
+using YMM4CloudSync.Core.Commons.Utilities;
 
 namespace YMM4CloudSync.Core.Commons.License;
 
@@ -29,7 +30,7 @@ public static class LicenseLoader
             }
             catch (Exception ex)
             {
-                SentrySdk.CaptureException(ex);
+                SentryReporter.Capture(ex);
             }
         }
 

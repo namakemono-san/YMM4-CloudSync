@@ -19,12 +19,12 @@ public interface ICloudStorageService
     /// Attempts to authenticate silently using cached credentials.
     /// </summary>
     /// <returns>True if authentication succeeded; otherwise, false.</returns>
-    Task<bool> AuthenticateAsync();
+    Task<bool> AuthenticateAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Logs out the current user and clears cached credentials.
     /// </summary>
-    Task LogoutAsync();
+    Task LogoutAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Lists files in the specified folder or the root application folder.
@@ -32,7 +32,7 @@ public interface ICloudStorageService
     /// <param name="folderId">The folder ID to list files from, or null for the root folder.</param>
     /// <returns>A list of cloud files with metadata.</returns>
     /// <exception cref="InvalidOperationException">Thrown when not authenticated.</exception>
-    Task<List<CloudFile>> ListFilesAsync(string? folderId = null);
+    Task<List<CloudFile>> ListFilesAsync(string? folderId = null, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Uploads a local file to cloud storage.
@@ -43,7 +43,8 @@ public interface ICloudStorageService
     /// <returns>The unique file ID in cloud storage.</returns>
     /// <exception cref="FileNotFoundException">Thrown when the local file doesn't exist.</exception>
     /// <exception cref="InvalidOperationException">Thrown when not authenticated or upload fails.</exception>
-    Task<string> UploadFileAsync(string localPath, string remotePath, IProgress<double>? progress = null);
+    Task<string> UploadFileAsync(string localPath, string remotePath, IProgress<double>? progress = null,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Downloads a file from cloud storage to a local path.
@@ -52,14 +53,15 @@ public interface ICloudStorageService
     /// <param name="localPath">The destination path for the downloaded file.</param>
     /// <param name="progress">Optional progress reporter for download percentage (0-100).</param>
     /// <exception cref="InvalidOperationException">Thrown when not authenticated or download fails.</exception>
-    Task DownloadFileAsync(string remoteFileId, string localPath, IProgress<double>? progress = null);
+    Task DownloadFileAsync(string remoteFileId, string localPath, IProgress<double>? progress = null,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Deletes a file from cloud storage.
     /// </summary>
     /// <param name="fileId">The unique ID of the file to delete.</param>
     /// <exception cref="InvalidOperationException">Thrown when not authenticated or deletion fails.</exception>
-    Task DeleteFileAsync(string fileId);
+    Task DeleteFileAsync(string fileId, CancellationToken cancellationToken = default);
 }
 
 /// <summary>
