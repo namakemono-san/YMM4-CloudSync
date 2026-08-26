@@ -202,7 +202,9 @@ public partial class ProjectTab : UserControl
         try
         {
             var files = await svc.ListFilesAsync(null, refreshCancellation.Token);
-            var ymmxFiles = files.Where(f => f.Name.EndsWith(".ymmx", StringComparison.OrdinalIgnoreCase)).ToList();
+            var ymmxFiles = files
+                .Where(f => !f.IsFolder && f.Name.EndsWith(".ymmx", StringComparison.OrdinalIgnoreCase))
+                .ToList();
             CloudFilesList.ItemsSource = ymmxFiles;
         }
         catch (OperationCanceledException)

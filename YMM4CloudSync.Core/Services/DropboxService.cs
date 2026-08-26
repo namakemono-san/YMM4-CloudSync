@@ -287,7 +287,7 @@ public class DropboxService : ICloudStorageService, IDisposable
                 result.AddRange(list.Entries.Select(item => new CloudFile(
                     item.PathDisplay,
                     item.Name,
-                    item.IsFolder ? "application/vnd.dropbox.folder" : "application/octet-stream",
+                    item.IsFolder ? CloudMimeTypes.DropboxFolder : "application/octet-stream",
                     item.IsFile ? (long?)item.AsFile.Size : null,
                     item.IsFile ? (DateTime?)item.AsFile.ClientModified.ToLocalTime() : null)));
 
@@ -300,7 +300,7 @@ public class DropboxService : ICloudStorageService, IDisposable
             }
 
             return result
-                .OrderByDescending(f => f.MimeType == "application/vnd.dropbox.folder")
+                .OrderByDescending(f => f.IsFolder)
                 .ThenByDescending(f => f.ModifiedTime ?? DateTime.MinValue)
                 .ToList();
         }

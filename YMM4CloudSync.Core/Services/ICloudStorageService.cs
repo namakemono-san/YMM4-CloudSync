@@ -78,4 +78,19 @@ public record CloudFile(
     string MimeType,
     long? Size,
     DateTime? ModifiedTime
-);
+)
+{
+    public bool IsFolder => CloudMimeTypes.IsFolder(MimeType);
+}
+
+public static class CloudMimeTypes
+{
+    public const string GoogleFolder = "application/vnd.google-apps.folder";
+    public const string OneDriveFolder = "application/vnd.microsoft.folder";
+    public const string DropboxFolder = "application/vnd.dropbox.folder";
+
+    public static bool IsFolder(string? mimeType)
+    {
+        return mimeType is GoogleFolder or OneDriveFolder or DropboxFolder;
+    }
+}

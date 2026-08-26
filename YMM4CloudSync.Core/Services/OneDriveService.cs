@@ -163,7 +163,7 @@ public sealed class OneDriveService : ICloudStorageService, IDisposable
                     items.Add(new CloudFile(
                         id,
                         name,
-                        isFolder ? "application/vnd.microsoft.folder" : "application/octet-stream",
+                        isFolder ? CloudMimeTypes.OneDriveFolder : "application/octet-stream",
                         size,
                         modified));
                 }
