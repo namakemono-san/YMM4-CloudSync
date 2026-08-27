@@ -55,6 +55,8 @@
 
     <PackageReference Include="Microsoft.Identity.Client" Version="4.79.2" />
 
+    <PackageReference Include="System.Management" Version="10.0.9" ExcludeAssets="runtime" />
+
     <PackageReference Include="MahApps.Metro.IconPacks.Material" Version="6.2.1" />
     
     <PackageReference Include="ReactiveProperty.Core" Version="8.2.0" ExcludeAssets="runtime" />
@@ -63,8 +65,6 @@
     
     <PackageReference Include="Sentry" Version="6.0.0" />
 
-    <PackageReference Include="System.Management" Version="10.0.1" ExcludeAssets="runtime" />
-    
     <PackageReference Include="Google.Apis.Drive.v3" Version="1.72.0.3970" />
 
     <PackageReference Include="Costura.Fody" Version="5.7.0">

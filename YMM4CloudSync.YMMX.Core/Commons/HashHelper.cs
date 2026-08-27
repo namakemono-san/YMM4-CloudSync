@@ -9,7 +9,7 @@ namespace YMM4CloudSync.YMMX.Core.Commons;
 /// </summary>
 public static class HashHelper
 {
-    private const int FileBufferSize = 81920;
+    private const int FileBufferSize = 1024 * 1024;
 
     /// <summary>
     /// Computes SHA256 hash of directory contents in a deterministic manner.
@@ -51,7 +51,8 @@ public static class HashHelper
             var pathBytes = Encoding.UTF8.GetBytes(relativePath);
             sha256.TransformBlock(pathBytes, 0, pathBytes.Length, null, 0);
 
-            using var stream = new FileStream(file, FileMode.Open, FileAccess.Read);
+            using var stream = new FileStream(
+                file, FileMode.Open, FileAccess.Read, FileShare.Read, FileBufferSize, FileOptions.SequentialScan);
             int bytesRead;
             while ((bytesRead = stream.Read(buffer, 0, buffer.Length)) > 0)
             {

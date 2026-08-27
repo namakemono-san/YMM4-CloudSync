@@ -188,11 +188,11 @@ public sealed class ProjectTabViewModel : INotifyPropertyChanged, IDisposable
         _operation.Cancel();
     }
 
-    private IProgress<double> CreateProgress(string label) => new Progress<double>(p =>
+    private IProgress<double> CreateProgress(string label) => new ThrottledProgress(new Progress<double>(p =>
     {
         ProgressValue = p;
         ProgressText = $"{label} {p:F0}%";
-    });
+    }));
 
     public async Task RefreshAsync(CancellationToken cancellationToken = default)
     {

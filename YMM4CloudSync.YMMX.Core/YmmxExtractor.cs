@@ -186,7 +186,7 @@ public static class YmmxExtractor
 
         using var archive = ZipFile.OpenRead(ymmxPath);
 
-        var buffer = new byte[81920];
+        var buffer = new byte[1024 * 1024];
 
         foreach (var entry in archive.Entries)
         {
@@ -207,7 +207,8 @@ public static class YmmxExtractor
                 Directory.CreateDirectory(targetDir);
 
             using var source = entry.Open();
-            using var target = new FileStream(targetPath, FileMode.Create, FileAccess.Write, FileShare.None);
+            using var target = new FileStream(
+                targetPath, FileMode.Create, FileAccess.Write, FileShare.None, buffer.Length);
 
             int read;
             while ((read = source.Read(buffer, 0, buffer.Length)) > 0)

@@ -36,12 +36,10 @@ public class YmmxMeta
         return JsonSerializer.Deserialize<YmmxMeta>(json);
     }
 
-    public void Save(string path)
+    public string ToJson() => JsonSerializer.Serialize(this, new JsonSerializerOptions
     {
-        var json = JsonSerializer.Serialize(this, new JsonSerializerOptions
-        {
-            WriteIndented = true
-        });
-        File.WriteAllText(path, json);
-    }
+        WriteIndented = true
+    });
+
+    public void Save(string path) => File.WriteAllText(path, ToJson());
 }
