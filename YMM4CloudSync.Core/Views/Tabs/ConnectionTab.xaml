@@ -67,6 +67,6 @@
                 Content="WebDAV 接続を追加"/>
 
         <TextBlock Margin="0,6,0,0" FontSize="11" Opacity="0.7" TextWrapping="Wrap"
-                   Text="Nextcloud / ownCloud / TeraCLOUD など、WebDAV に対応したサーバーを複数登録できます。"/>
+                   Text="Nextcloud / ownCloud / InfiniCLOUD など、WebDAV に対応したサーバーを複数登録できます。"/>
     </StackPanel>
 </UserControl>

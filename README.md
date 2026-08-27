@@ -21,7 +21,7 @@
 - Google Drive
 - Dropbox
 - OneDrive
-- WebDAV (Nextcloud / ownCloud / TeraCLOUD など)
+- WebDAV (Nextcloud / ownCloud / InfiniCLOUD など)
 
 ※ 今後、対応クラウドサービスの追加を予定しています。
 

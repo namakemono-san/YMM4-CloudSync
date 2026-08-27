@@ -36,7 +36,7 @@
 - プロジェクトを .ymmx ファイルとしてローカルに書き出せるように
   - 素材をまとめた1ファイルになるため、そのまま配布・受け渡しが可能
   - クラウドと連携していなくても使用可能
-- WebDAV に対応 (Nextcloud / ownCloud / TeraCLOUD など)
+- WebDAV に対応 (Nextcloud / ownCloud / InfiniCLOUD など)
   - 複数の接続先を登録可能
   - Basic / Digest 認証に対応
   - Nextcloud / ownCloud では大きいファイルを分割送信し、中断時は続きから再開
