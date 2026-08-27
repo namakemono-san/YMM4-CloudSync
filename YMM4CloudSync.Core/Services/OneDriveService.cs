@@ -159,13 +159,18 @@ public sealed class OneDriveService : ICloudStorageService, IDisposable
                     var size = item.TryGetProperty("size", out var sz) ? sz.GetInt64() : (long?)null;
                     var modified = item.TryGetProperty("lastModifiedDateTime", out var lm) ? lm.GetDateTime() : (DateTime?)null;
                     var isFolder = item.TryGetProperty("folder", out _);
+                    var parentId = item.TryGetProperty("parentReference", out var parentRef)
+                                   && parentRef.TryGetProperty("id", out var parentIdValue)
+                        ? parentIdValue.GetString()
+                        : folderId;
 
                     items.Add(new CloudFile(
                         id,
                         name,
                         isFolder ? CloudMimeTypes.OneDriveFolder : "application/octet-stream",
                         size,
-                        modified));
+                        modified,
+                        parentId));
                 }
 
                 var nextLink = doc.RootElement.TryGetProperty("@odata.nextLink", out var next)

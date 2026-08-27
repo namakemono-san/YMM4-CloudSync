@@ -110,6 +110,8 @@ public class ToolViewModel : IDisposable
             .AddTo(_disposables);
     }
     
+    public void AttachDisposable(IDisposable disposable) => _disposables.Add(disposable);
+
     public CloudServiceItem AddWebDavConnection()
     {
         var item = new CloudServiceItem(new WebDavService(new WebDavSettings()));

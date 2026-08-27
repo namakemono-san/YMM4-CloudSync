@@ -289,7 +289,8 @@ public class DropboxService : ICloudStorageService, IDisposable
                     item.Name,
                     item.IsFolder ? CloudMimeTypes.DropboxFolder : "application/octet-stream",
                     item.IsFile ? (long?)item.AsFile.Size : null,
-                    item.IsFile ? (DateTime?)item.AsFile.ClientModified.ToLocalTime() : null)));
+                    item.IsFile ? (DateTime?)item.AsFile.ClientModified.ToLocalTime() : null,
+                    GetParentPath(item.PathDisplay))));
 
                 if (!list.HasMore) break;
 
@@ -520,6 +521,20 @@ public class DropboxService : ICloudStorageService, IDisposable
     {
         return _client
                ?? throw new InvalidOperationException("Dropboxに認証されていません。連携タブからサインインしてください。");
+    }
+
+    private static string? GetParentPath(string? path)
+    {
+        if (string.IsNullOrEmpty(path)) return null;
+
+        var normalized = path.Replace('\\', '/').TrimEnd('/');
+        var lastSlash = normalized.LastIndexOf('/');
+
+        if (lastSlash < 0) return null;
+
+        var parent = normalized[..lastSlash];
+
+        return parent.Length == 0 ? "/" : parent;
     }
 
     private static string NormalizePathForListFolder(string? path)

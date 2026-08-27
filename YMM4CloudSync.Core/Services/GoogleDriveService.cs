@@ -333,7 +333,7 @@ public class GoogleDriveService : ICloudStorageService, IDisposable
                 request.Q = targetFolderId != null
                     ? $"'{EscapeQueryValue(targetFolderId)}' in parents and trashed = false"
                     : "trashed = false";
-                request.Fields = "nextPageToken, files(id, name, mimeType, size, modifiedTime)";
+                request.Fields = "nextPageToken, files(id, name, mimeType, size, modifiedTime, parents)";
                 request.OrderBy = "modifiedTime desc";
                 request.PageSize = 100;
 
@@ -345,7 +345,13 @@ public class GoogleDriveService : ICloudStorageService, IDisposable
 
             if (result.Files != null)
             {
-                files.AddRange(result.Files.Select(file => new CloudFile(file.Id, file.Name, file.MimeType, file.Size, file.ModifiedTimeDateTimeOffset?.DateTime)));
+                files.AddRange(result.Files.Select(file => new CloudFile(
+                    file.Id,
+                    file.Name,
+                    file.MimeType,
+                    file.Size,
+                    file.ModifiedTimeDateTimeOffset?.DateTime,
+                    file.Parents?.FirstOrDefault() ?? targetFolderId)));
             }
 
             pageToken = result.NextPageToken;

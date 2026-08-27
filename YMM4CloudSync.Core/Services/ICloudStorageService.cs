@@ -77,7 +77,8 @@ public record CloudFile(
     string Name,
     string MimeType,
     long? Size,
-    DateTime? ModifiedTime
+    DateTime? ModifiedTime,
+    string? ParentId = null
 )
 {
     public bool IsFolder => CloudMimeTypes.IsFolder(MimeType);

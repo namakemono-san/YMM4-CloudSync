@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.IO;
 using YMM4CloudSync.Core.Commons.Network;
 using YMM4CloudSync.Core.Commons.Utilities;
@@ -129,7 +129,8 @@ public sealed class WebDavService : ICloudStorageService, IDisposable
                 r.Name,
                 r.IsCollection ? CloudMimeTypes.WebDavCollection : "application/octet-stream",
                 r.ContentLength,
-                r.LastModified))
+                r.LastModified,
+                GetParentPath(r.RelativePath)))
             .OrderByDescending(f => f.IsFolder)
             .ThenByDescending(f => f.ModifiedTime ?? DateTime.MinValue)
             .ToList();
@@ -229,6 +230,20 @@ public sealed class WebDavService : ICloudStorageService, IDisposable
 
             await client.CreateDirectoryAsync(current, cancellationToken);
         }
+    }
+
+    private static string? GetParentPath(string? path)
+    {
+        if (string.IsNullOrEmpty(path)) return null;
+
+        var normalized = path.Replace('\\', '/').TrimEnd('/');
+        var lastSlash = normalized.LastIndexOf('/');
+
+        if (lastSlash < 0) return null;
+
+        var parent = normalized[..lastSlash];
+
+        return parent.Length == 0 ? "/" : parent;
     }
 
     private string CombineWithBasePath(string remotePath)
