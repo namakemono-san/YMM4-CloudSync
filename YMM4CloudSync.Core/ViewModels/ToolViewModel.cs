@@ -10,6 +10,7 @@ using YMM4CloudSync.Core.Commons.License;
 using YMM4CloudSync.Core.Commons.Utilities;
 using YMM4CloudSync.Core.Models;
 using YMM4CloudSync.Core.Services;
+using YMM4CloudSync.Core.Services.WebDav;
 
 namespace YMM4CloudSync.Core.ViewModels;
 
@@ -50,6 +51,11 @@ public class ToolViewModel : IDisposable
         CloudServices.Add(new CloudServiceItem(new GoogleDriveService()));
         CloudServices.Add(new CloudServiceItem(new OneDriveService()));
         CloudServices.Add(new CloudServiceItem(new DropboxService()));
+
+        foreach (var connection in WebDavConnectionStore.Load())
+        {
+            CloudServices.Add(new CloudServiceItem(new WebDavService(connection)));
+        }
         
         SelectedCloudService.Value = CloudServices.FirstOrDefault();
         SelectedCloudService.AddTo(_disposables);
@@ -104,6 +110,28 @@ public class ToolViewModel : IDisposable
             .AddTo(_disposables);
     }
     
+    public CloudServiceItem AddWebDavConnection()
+    {
+        var item = new CloudServiceItem(new WebDavService(new WebDavSettings()));
+
+        CloudServices.Add(item);
+        SelectedCloudService.Value ??= item;
+
+        return item;
+    }
+
+    public void RemoveWebDavConnection(CloudServiceItem item)
+    {
+        if (item.Service is not WebDavService service) return;
+
+        CloudServices.Remove(item);
+        service.Dispose();
+
+        if (!ReferenceEquals(SelectedCloudService.Value, item)) return;
+
+        SelectedCloudService.Value = CloudServices.FirstOrDefault();
+    }
+
     private int _autoConnectState;
 
     public async Task TryAutoConnectAsync()

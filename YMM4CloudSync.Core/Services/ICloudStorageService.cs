@@ -88,9 +88,10 @@ public static class CloudMimeTypes
     public const string GoogleFolder = "application/vnd.google-apps.folder";
     public const string OneDriveFolder = "application/vnd.microsoft.folder";
     public const string DropboxFolder = "application/vnd.dropbox.folder";
+    public const string WebDavCollection = "httpd/unix-directory";
 
     public static bool IsFolder(string? mimeType)
     {
-        return mimeType is GoogleFolder or OneDriveFolder or DropboxFolder;
+        return mimeType is GoogleFolder or OneDriveFolder or DropboxFolder or WebDavCollection;
     }
 }

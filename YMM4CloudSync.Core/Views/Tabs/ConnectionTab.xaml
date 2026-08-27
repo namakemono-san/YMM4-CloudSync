@@ -59,5 +59,14 @@
                 </DataTemplate>
             </ItemsControl.ItemTemplate>
         </ItemsControl>
+
+        <Separator Margin="0,4,0,10"/>
+
+        <Button HorizontalAlignment="Left" Padding="10,4"
+                Click="OnAddWebDavClick"
+                Content="WebDAV 接続を追加"/>
+
+        <TextBlock Margin="0,6,0,0" FontSize="11" Opacity="0.7" TextWrapping="Wrap"
+                   Text="Nextcloud / ownCloud / TeraCLOUD など、WebDAV に対応したサーバーを複数登録できます。"/>
     </StackPanel>
 </UserControl>

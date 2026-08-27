@@ -102,10 +102,12 @@ public static class RetryHelper
         {
             HttpStatusCode.RequestTimeout => true,
             HttpStatusCode.TooManyRequests => true,
+            HttpStatusCode.Locked => true,
             HttpStatusCode.InternalServerError => true,
             HttpStatusCode.BadGateway => true,
             HttpStatusCode.ServiceUnavailable => true,
             HttpStatusCode.GatewayTimeout => true,
+            HttpStatusCode.InsufficientStorage => false,
             _ => false
         };
     }
