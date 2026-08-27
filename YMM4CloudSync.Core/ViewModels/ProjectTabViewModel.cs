@@ -36,6 +36,7 @@ public sealed class ProjectTabViewModel : INotifyPropertyChanged, IDisposable
 
         RefreshCommand = new AsyncRelayCommand(() => RefreshAsync(), () => IsConnected && !IsProcessing);
         UploadCommand = new AsyncRelayCommand(UploadAsync, () => IsConnected && !IsProcessing && !IsProjectEmpty);
+        ExportCommand = new AsyncRelayCommand(ExportAsync, () => !IsProcessing && !IsProjectEmpty);
         OpenCommand = new AsyncRelayCommand(p => OpenAsync(p as CloudFile), p => p is CloudFile && !IsProcessing);
         DownloadCommand = new AsyncRelayCommand(p => DownloadAsync(p as CloudFile), _ => !IsProcessing);
         DeleteCommand = new AsyncRelayCommand(p => DeleteAsync(p as CloudFile), p => p is CloudFile && !IsProcessing);
@@ -50,6 +51,7 @@ public sealed class ProjectTabViewModel : INotifyPropertyChanged, IDisposable
 
     public AsyncRelayCommand RefreshCommand { get; }
     public AsyncRelayCommand UploadCommand { get; }
+    public AsyncRelayCommand ExportCommand { get; }
     public AsyncRelayCommand OpenCommand { get; }
     public AsyncRelayCommand DownloadCommand { get; }
     public AsyncRelayCommand DeleteCommand { get; }
@@ -331,17 +333,103 @@ public sealed class ProjectTabViewModel : INotifyPropertyChanged, IDisposable
         Process.Start(startInfo);
     }
 
+    private bool EnsureProjectHasContent()
+    {
+        RefreshProjectState();
+
+        if (!IsProjectEmpty) return true;
+
+        _dialogs.ShowInformation(EmptyProjectReason, "確認");
+
+        return false;
+    }
+
+    private string? SaveAndResolveProjectPath()
+    {
+        switch (YmmHelper.SaveProject())
+        {
+            case SaveResult.Cancelled:
+                return null;
+            case SaveResult.Failed:
+                _dialogs.ShowError("プロジェクトの保存に失敗しました。", "エラー");
+                return null;
+            case SaveResult.Success:
+            default:
+                break;
+        }
+
+        var ymmpPath = YmmHelper.GetCurrentProjectPath();
+
+        if (!string.IsNullOrEmpty(ymmpPath)) return ymmpPath;
+
+        _dialogs.ShowWarning("プロジェクトパスが取得できませんでした。", "エラー");
+
+        return null;
+    }
+
+    private async Task ExportAsync()
+    {
+        if (!EnsureProjectHasContent()) return;
+
+        var ymmpPath = SaveAndResolveProjectPath();
+        if (ymmpPath == null) return;
+
+        var projectName = Path.GetFileNameWithoutExtension(ymmpPath);
+
+        var destination = _dialogs.PickYmmxDestination("YMMX ファイルの書き出し先を選択", $"{projectName}.ymmx");
+        if (destination == null) return;
+
+        if (!TryBeginProcessing("パッケージ作成中...")) return;
+
+        var token = _operation!.Token;
+        var stagingPath = destination + ".tmp";
+
+        try
+        {
+            var packProgress = CreateProgress("パッケージ作成中...");
+
+            var packResult = await Task.Run(
+                () => YmmxPacker.Pack(ymmpPath, stagingPath, projectName, packProgress, token), token);
+
+            if (!packResult.Success)
+            {
+                _dialogs.ShowError("パッケージの作成に失敗しました。", "エラー");
+                return;
+            }
+
+            File.Move(stagingPath, destination, overwrite: true);
+
+            var message = $"書き出しが完了しました。\n{destination}";
+
+            if (packResult.MissingFiles.Count > 0)
+                message += $"\n\n見つからなかったファイル: {packResult.MissingFiles.Count} 件";
+
+            if (_dialogs.AskYesNo($"{message}\n\n保存先のフォルダを開きますか？", "完了"))
+                _dialogs.OpenContainingFolder(destination);
+        }
+        catch (OperationCanceledException)
+        {
+            Debug.WriteLine("[ProjectTab] Export cancelled.");
+        }
+        catch (Exception ex)
+        {
+            _dialogs.ReportException(ex);
+        }
+        finally
+        {
+            DeleteQuietly(stagingPath);
+            EndProcessing();
+        }
+    }
+
     private async Task UploadAsync()
     {
         if (Service is not { } service) return;
 
-        RefreshProjectState();
+        if (!EnsureProjectHasContent()) return;
 
-        if (IsProjectEmpty)
-        {
-            _dialogs.ShowInformation(EmptyProjectReason, "確認");
-            return;
-        }
+        var ymmpPath = SaveAndResolveProjectPath();
+        if (ymmpPath == null) return;
 
         if (!TryBeginProcessing("保存中...")) return;
 
@@ -350,25 +438,6 @@ public sealed class ProjectTabViewModel : INotifyPropertyChanged, IDisposable
 
         try
         {
-            switch (YmmHelper.SaveProject())
-            {
-                case SaveResult.Cancelled:
-                    return;
-                case SaveResult.Failed:
-                    _dialogs.ShowError("プロジェクトの保存に失敗しました。", "エラー");
-                    return;
-                case SaveResult.Success:
-                default:
-                    break;
-            }
-
-            var ymmpPath = YmmHelper.GetCurrentProjectPath();
-            if (string.IsNullOrEmpty(ymmpPath))
-            {
-                _dialogs.ShowWarning("プロジェクトパスが取得できませんでした。", "エラー");
-                return;
-            }
-
             var settings = Tool.Settings;
             var projectName = Path.GetFileNameWithoutExtension(ymmpPath);
 
@@ -436,7 +505,8 @@ public sealed class ProjectTabViewModel : INotifyPropertyChanged, IDisposable
 
         if (Service is not { } service) return;
 
-        var destination = _dialogs.PickDownloadDestination(PathHelper.SanitizeFileName(file.Name, "project.ymmx"));
+        var destination = _dialogs.PickYmmxDestination(
+            "保存先を選択", PathHelper.SanitizeFileName(file.Name, "project.ymmx"));
         if (destination == null) return;
 
         if (!TryBeginProcessing("ダウンロード中...")) return;
@@ -533,6 +603,7 @@ public sealed class ProjectTabViewModel : INotifyPropertyChanged, IDisposable
     {
         RefreshCommand.RaiseCanExecuteChanged();
         UploadCommand.RaiseCanExecuteChanged();
+        ExportCommand.RaiseCanExecuteChanged();
         OpenCommand.RaiseCanExecuteChanged();
         DownloadCommand.RaiseCanExecuteChanged();
         DeleteCommand.RaiseCanExecuteChanged();

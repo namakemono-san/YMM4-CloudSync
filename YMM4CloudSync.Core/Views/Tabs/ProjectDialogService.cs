@@ -44,6 +44,20 @@ public sealed class ProjectDialogService : IProjectDialogService
         });
     }
 
+    public bool AskYesNo(string message, string caption)
+    {
+        return Dispatcher.Invoke(() =>
+        {
+            var owner = OwnerWindow;
+
+            var result = owner == null
+                ? MessageBox.Show(message, caption, MessageBoxButton.YesNo, MessageBoxImage.Information)
+                : MessageBox.Show(owner, message, caption, MessageBoxButton.YesNo, MessageBoxImage.Information);
+
+            return result == MessageBoxResult.Yes;
+        });
+    }
+
     public ExtractConflictAction ResolveExtractConflict(YmmxMeta? existing, YmmxMeta? incoming)
     {
         return Dispatcher.Invoke(() =>
@@ -72,19 +86,41 @@ public sealed class ProjectDialogService : IProjectDialogService
         });
     }
 
-    public string? PickDownloadDestination(string suggestedFileName)
+    public string? PickYmmxDestination(string title, string suggestedFileName)
     {
         return Dispatcher.Invoke(() =>
         {
             var dialog = new SaveFileDialog
             {
-                Title = "保存先を選択",
+                Title = title,
                 Filter = "YMMX ファイル (*.ymmx)|*.ymmx",
+                DefaultExt = ".ymmx",
+                AddExtension = true,
                 FileName = suggestedFileName
             };
 
             return dialog.ShowDialog() == true ? dialog.FileName : null;
         });
+    }
+
+    public void OpenContainingFolder(string filePath)
+    {
+        try
+        {
+            var folder = System.IO.Path.GetDirectoryName(filePath);
+
+            if (string.IsNullOrEmpty(folder) || !System.IO.Directory.Exists(folder)) return;
+
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = folder,
+                UseShellExecute = true
+            });
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[ProjectTab] Failed to open folder: {ex.Message}");
+        }
     }
 
     public void ReportException(Exception exception) => ErrorReporter.ReportAndShowDialog(exception);

@@ -13,9 +13,13 @@ public interface IProjectDialogService
 
     bool Confirm(string message, string caption);
 
+    bool AskYesNo(string message, string caption);
+
     ExtractConflictAction ResolveExtractConflict(YmmxMeta? existing, YmmxMeta? incoming);
 
-    string? PickDownloadDestination(string suggestedFileName);
+    string? PickYmmxDestination(string title, string suggestedFileName);
+
+    void OpenContainingFolder(string filePath);
 
     void ReportException(Exception exception);
 }

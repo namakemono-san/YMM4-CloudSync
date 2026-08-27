@@ -19,6 +19,7 @@
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
         <Grid Grid.Row="0" Margin="0,0,0,5">
@@ -138,6 +139,17 @@
             <StackPanel Orientation="Horizontal">
                 <iconPacks:PackIconMaterial Kind="CloudUpload" Width="18" Height="18" Margin="0,0,8,0"/>
                 <TextBlock Text="プロジェクトを保存" VerticalAlignment="Center"/>
+            </StackPanel>
+        </Button>
+
+        <Button Grid.Row="4"
+                Height="30"
+                Margin="0,6,0,0"
+                Command="{Binding ExportCommand}"
+                ToolTip="クラウドにアップロードせず、プロジェクトを .ymmx ファイルとして書き出します。">
+            <StackPanel Orientation="Horizontal">
+                <iconPacks:PackIconMaterial Kind="PackageVariantClosed" Width="16" Height="16" Margin="0,0,8,0"/>
+                <TextBlock Text="YMMX ファイルとして書き出し" VerticalAlignment="Center" FontSize="12"/>
             </StackPanel>
         </Button>
     </Grid>
