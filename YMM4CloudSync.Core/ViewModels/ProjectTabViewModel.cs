@@ -1,9 +1,10 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Net.Http;
 using System.Runtime.CompilerServices;
+using YMM4CloudSync.Core.Commons.Configuration;
 using YMM4CloudSync.Core.Commons.Utilities;
 using YMM4CloudSync.Core.Services;
 using YMM4CloudSync.YMMX.Core;
@@ -37,7 +38,8 @@ public sealed class ProjectTabViewModel : INotifyPropertyChanged, IDisposable
         RefreshCommand = new AsyncRelayCommand(() => RefreshAsync(), () => IsConnected && !IsProcessing);
         UploadCommand = new AsyncRelayCommand(UploadAsync, () => IsConnected && !IsProcessing && !IsProjectEmpty);
         ExportCommand = new AsyncRelayCommand(ExportAsync, () => !IsProcessing && !IsProjectEmpty);
-        OpenCommand = new AsyncRelayCommand(p => OpenAsync(p as CloudFile), p => p is CloudFile && !IsProcessing);
+        OpenCommand = new AsyncRelayCommand(p => OpenAsync(p as CloudFile, false), p => p is CloudFile && !IsProcessing);
+        ReopenCommand = new AsyncRelayCommand(p => OpenAsync(p as CloudFile, true), p => p is CloudFile && !IsProcessing);
         DownloadCommand = new AsyncRelayCommand(p => DownloadAsync(p as CloudFile), _ => !IsProcessing);
         DeleteCommand = new AsyncRelayCommand(p => DeleteAsync(p as CloudFile), p => p is CloudFile && !IsProcessing);
         CancelCommand = new RelayCommand(_ => Cancel(), _ => CanCancel);
@@ -53,6 +55,7 @@ public sealed class ProjectTabViewModel : INotifyPropertyChanged, IDisposable
     public AsyncRelayCommand UploadCommand { get; }
     public AsyncRelayCommand ExportCommand { get; }
     public AsyncRelayCommand OpenCommand { get; }
+    public AsyncRelayCommand ReopenCommand { get; }
     public AsyncRelayCommand DownloadCommand { get; }
     public AsyncRelayCommand DeleteCommand { get; }
     public RelayCommand CancelCommand { get; }
@@ -92,6 +95,17 @@ public sealed class ProjectTabViewModel : INotifyPropertyChanged, IDisposable
         get;
         private set => SetProperty(ref field, value);
     } = "処理中...";
+
+    public CloudFile? SelectedFile
+    {
+        get;
+        set
+        {
+            if (!SetProperty(ref field, value)) return;
+
+            RaiseCommandStates();
+        }
+    }
 
     public string? UploadBlockedReason => IsProjectEmpty ? EmptyProjectReason : null;
 
@@ -250,9 +264,12 @@ public sealed class ProjectTabViewModel : INotifyPropertyChanged, IDisposable
         _refresh = null;
     }
 
-    private async Task OpenAsync(CloudFile? file)
+    private async Task OpenAsync(CloudFile? file, bool forceDownload)
     {
         if (file == null || Service is not { } service) return;
+
+        if (!forceDownload && TryLaunchCachedProject(service, file)) return;
+
         if (!TryBeginProcessing("ダウンロード中...")) return;
 
         var token = _operation!.Token;
@@ -295,6 +312,15 @@ public sealed class ProjectTabViewModel : INotifyPropertyChanged, IDisposable
                 await Task.Run(() => CleanupOldBackups(Path.GetDirectoryName(outputDir)!, projectName), token);
             }
 
+            OpenStateStore.Save(new OpenStateEntry
+            {
+                ServiceName = service.ServiceName,
+                FileId = file.Id,
+                RemoteModifiedTime = file.ModifiedTime,
+                RemoteSize = file.Size,
+                YmmpPath = result.YmmpPath
+            });
+
             LaunchYmm(result.YmmpPath);
         }
         catch (OperationCanceledException)
@@ -310,6 +336,23 @@ public sealed class ProjectTabViewModel : INotifyPropertyChanged, IDisposable
             if (tempPath != null) DeleteQuietly(tempPath);
             EndProcessing();
         }
+    }
+
+    private bool TryLaunchCachedProject(ICloudStorageService service, CloudFile file)
+    {
+        var entry = OpenStateStore.Find(service.ServiceName, file.Id);
+
+        if (entry == null || !entry.Matches(file.ModifiedTime, file.Size)) return false;
+
+        if (!File.Exists(entry.YmmpPath))
+        {
+            OpenStateStore.Remove(service.ServiceName, file.Id);
+            return false;
+        }
+
+        LaunchYmm(entry.YmmpPath);
+
+        return true;
     }
 
     private bool ConfirmOpenDespiteHashMismatch() => _dialogs.Confirm(
@@ -605,6 +648,7 @@ public sealed class ProjectTabViewModel : INotifyPropertyChanged, IDisposable
         UploadCommand.RaiseCanExecuteChanged();
         ExportCommand.RaiseCanExecuteChanged();
         OpenCommand.RaiseCanExecuteChanged();
+        ReopenCommand.RaiseCanExecuteChanged();
         DownloadCommand.RaiseCanExecuteChanged();
         DeleteCommand.RaiseCanExecuteChanged();
         CancelCommand.RaiseCanExecuteChanged();

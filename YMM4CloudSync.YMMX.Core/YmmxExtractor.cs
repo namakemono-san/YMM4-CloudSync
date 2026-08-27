@@ -71,6 +71,7 @@ public static class YmmxExtractor
         
         var finalOutputDir = outputDirectory;
         string? backupDir = null;
+        var updateInPlace = false;
         
         if (Directory.Exists(outputDirectory))
         {
@@ -99,13 +100,13 @@ public static class YmmxExtractor
 
                     case ExtractConflictAction.Overwrite:
                     default:
-                        backupDir = CreateBackup(outputDirectory);
+                        (backupDir, updateInPlace) = CreateBackupForUpdate(outputDirectory);
                         break;
                 }
             }
             else
             {
-                backupDir = CreateBackup(outputDirectory);
+                (backupDir, updateInPlace) = CreateBackupForUpdate(outputDirectory);
             }
         }
 
@@ -115,7 +116,17 @@ public static class YmmxExtractor
         {
             try
             {
-                ExtractArchive(ymmxPath, finalOutputDir, cancellationToken);
+                if (updateInPlace && !TryUpdateArchiveInPlace(ymmxPath, finalOutputDir, cancellationToken))
+                {
+                    if (backupDir != null) DeleteDirectoryQuietly(backupDir);
+
+                    updateInPlace = false;
+                    backupDir = CreateBackup(finalOutputDir);
+
+                    Directory.CreateDirectory(finalOutputDir);
+                }
+
+                if (!updateInPlace) ExtractArchive(ymmxPath, finalOutputDir, cancellationToken);
             }
             catch (IOException ex)
             {
@@ -129,7 +140,7 @@ public static class YmmxExtractor
             cancellationToken.ThrowIfCancellationRequested();
 
             var hashMismatch = false;
-            if (newMeta?.Hash != null)
+            if (!updateInPlace && newMeta?.Hash != null)
             {
                 var actualHash = ComputeContentHash(finalOutputDir);
 
@@ -175,6 +186,202 @@ public static class YmmxExtractor
         {
             RollBack(finalOutputDir, backupDir, outputDirectory);
             throw;
+        }
+    }
+
+    private static (string? BackupDirectory, bool CanUpdateInPlace) CreateBackupForUpdate(string directory)
+    {
+        var snapshot = TryCreateLinkedSnapshot(directory);
+
+        return snapshot != null ? (snapshot, true) : (CreateBackup(directory), false);
+    }
+
+    private static string? TryCreateLinkedSnapshot(string directory)
+    {
+        var backupDir = $"{directory}_bak_{DateTime.Now:yyyyMMdd_HHmmss}";
+
+        if (Directory.Exists(backupDir)) return null;
+
+        try
+        {
+            Directory.CreateDirectory(backupDir);
+
+            foreach (var file in Directory.GetFiles(directory, "*", SearchOption.AllDirectories))
+            {
+                var target = Path.Combine(backupDir, Path.GetRelativePath(directory, file));
+
+                var targetDir = Path.GetDirectoryName(target);
+                if (!string.IsNullOrEmpty(targetDir)) Directory.CreateDirectory(targetDir);
+
+                if (HardLink.TryCreate(target, file)) continue;
+
+                DeleteDirectoryQuietly(backupDir);
+                return null;
+            }
+
+            return backupDir;
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[YmmxExtractor] Snapshot backup failed: {ex.Message}");
+            DeleteDirectoryQuietly(backupDir);
+            return null;
+        }
+    }
+
+    private static bool TryUpdateArchiveInPlace(string ymmxPath, string destinationDirectory, CancellationToken cancellationToken)
+    {
+        var root = Path.GetFullPath(destinationDirectory);
+        if (!root.EndsWith(Path.DirectorySeparatorChar))
+            root += Path.DirectorySeparatorChar;
+
+        using var archive = ZipFile.OpenRead(ymmxPath);
+
+        var buffer = new byte[1024 * 1024];
+
+        var toWrite = new List<(ZipArchiveEntry Entry, string TargetPath)>();
+
+        var toDelete = new HashSet<string>(
+            Directory.GetFiles(destinationDirectory, "*", SearchOption.AllDirectories),
+            StringComparer.OrdinalIgnoreCase);
+
+        foreach (var entry in archive.Entries)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (string.IsNullOrEmpty(entry.Name)) continue;
+
+            var targetPath = Path.GetFullPath(Path.Combine(root, entry.FullName));
+
+            if (!targetPath.StartsWith(root, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidDataException(
+                    $"ymmx ファイルに展開先の外を指すエントリが含まれています: {entry.FullName}");
+            }
+
+            toDelete.Remove(targetPath);
+
+            if (IsUpToDate(entry, targetPath, buffer, cancellationToken)) continue;
+
+            toWrite.Add((entry, targetPath));
+        }
+
+        var renamedProjectPath = Path.Combine(root, Path.GetFileNameWithoutExtension(ymmxPath) + ".ymmp");
+
+        if (!CanReplaceAll(toWrite.Select(x => x.TargetPath).Concat(toDelete).Append(renamedProjectPath)))
+        {
+            return false;
+        }
+
+        try
+        {
+            foreach (var (entry, targetPath) in toWrite)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var targetDir = Path.GetDirectoryName(targetPath);
+                if (!string.IsNullOrEmpty(targetDir)) Directory.CreateDirectory(targetDir);
+
+                if (File.Exists(targetPath)) File.Delete(targetPath);
+
+                using var source = entry.Open();
+                using var target = new FileStream(
+                    targetPath, FileMode.Create, FileAccess.Write, FileShare.None, buffer.Length);
+
+                int read;
+                while ((read = source.Read(buffer, 0, buffer.Length)) > 0)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    target.Write(buffer, 0, read);
+                }
+            }
+
+            foreach (var leftover in toDelete)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                File.Delete(leftover);
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException && !DiskSpaceHelper.IsDiskFull(ex))
+        {
+            Debug.WriteLine($"[YmmxExtractor] In-place update failed after planning: {ex.Message}");
+            return false;
+        }
+
+        RemoveEmptyDirectories(destinationDirectory);
+
+        return true;
+    }
+
+    private static bool CanReplaceAll(IEnumerable<string> paths)
+    {
+        foreach (var path in paths.Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            if (!File.Exists(path)) continue;
+
+            try
+            {
+                using var probe = new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                Debug.WriteLine($"[YmmxExtractor] {path} is locked, falling back to a full extract.");
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool IsUpToDate(ZipArchiveEntry entry, string targetPath, byte[] buffer, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var info = new FileInfo(targetPath);
+
+            if (!info.Exists || info.Length != entry.Length) return false;
+
+            return Crc32.ComputeFile(targetPath, buffer, cancellationToken) == entry.Crc32;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[YmmxExtractor] Failed to compare {targetPath}: {ex.Message}");
+            return false;
+        }
+    }
+
+    private static void RemoveEmptyDirectories(string root)
+    {
+        foreach (var directory in Directory.GetDirectories(root, "*", SearchOption.AllDirectories)
+                     .OrderByDescending(d => d.Length))
+        {
+            try
+            {
+                if (Directory.EnumerateFileSystemEntries(directory).Any()) continue;
+
+                Directory.Delete(directory);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[YmmxExtractor] Failed to remove empty directory: {ex.Message}");
+            }
+        }
+    }
+
+    private static void DeleteDirectoryQuietly(string directory)
+    {
+        try
+        {
+            if (Directory.Exists(directory)) Directory.Delete(directory, true);
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[YmmxExtractor] Failed to delete {directory}: {ex.Message}");
         }
     }
 
@@ -418,6 +625,13 @@ public static class YmmxExtractor
             
             Directory.Move(directory, backupDir);
             return backupDir;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            throw new IOException(
+                "既存のプロジェクトを退避できませんでした。\n\n" +
+                "このプロジェクトを YMM4 で開いたままにしている可能性があります。\n" +
+                "YMM4 で閉じてから、もう一度お試しください。", ex);
         }
         catch (Exception ex)
         {
