@@ -25,7 +25,7 @@ public class DropboxService : ICloudStorageService, IDisposable
 
     /// <summary>
     /// Dropbox upload limit for simple upload.
-    /// Files larger than 150MB must use a chunked upload session.
+    /// Files larger than 150MB should use chunked upload session.
     /// See: https://www.dropbox.com/developers/documentation/http/documentation#files-upload
     /// </summary>
     private const long UploadLimitBytes = 150 * 1024 * 1024; // 150MB
