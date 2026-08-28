@@ -16,12 +16,16 @@ public class GoogleDriveService : ICloudStorageService, IDisposable
 {
     public string ServiceName => "Google Drive";
 
+    public string ConnectionKey => "google-drive";
+
     private const string ClientId = GoogleDriveCredentials.ClientId;
     private const string ClientSecret = GoogleDriveCredentials.ClientSecret;
     private const string ApplicationName = "YMM4 Cloud Sync";
     private const string FolderName = "YMM4CloudSync";
 
-    private static readonly string[] Scopes = [DriveService.Scope.DriveFile];
+    private const string CredentialUser = "user-drive";
+
+    private static readonly string[] Scopes = [DriveService.Scope.Drive];
     private static readonly string CredentialPath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "YMM4CloudSync", "google_credentials");
@@ -61,7 +65,7 @@ public class GoogleDriveService : ICloudStorageService, IDisposable
                     ClientSecret = ClientSecret
                 },
                 Scopes,
-                "user",
+                CredentialUser,
                 cts.Token,
                 new EncryptedFileDataStore(CredentialPath));
 
@@ -164,7 +168,7 @@ public class GoogleDriveService : ICloudStorageService, IDisposable
         await Task.CompletedTask;
     }
 
-    public async Task<string> UploadFileAsync(string localPath, string remoteName,
+    public async Task<string> UploadFileToFolderAsync(string localPath, string? parentFolderId, string remoteName,
         IProgress<double>? progress = null, CancellationToken cancellationToken = default)
     {
         var driveService = EnsureAuthenticated();
@@ -172,11 +176,13 @@ public class GoogleDriveService : ICloudStorageService, IDisposable
         if (!File.Exists(localPath))
             throw new FileNotFoundException("アップロードするファイルが見つかりません。", localPath);
 
+        var parentId = parentFolderId ?? _appFolderId;
+
         return await RetryHelper.ExecuteWithRetryAsync(async () =>
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var existingFileId = await FindFileByNameAsync(driveService, remoteName, cancellationToken);
+            var existingFileId = await FindFileByNameAsync(driveService, parentId, remoteName, cancellationToken);
 
             await using var stream = new FileStream(localPath, FileMode.Open, FileAccess.Read);
             var totalSize = stream.Length;
@@ -205,7 +211,7 @@ public class GoogleDriveService : ICloudStorageService, IDisposable
                 var fileMetadata = new Google.Apis.Drive.v3.Data.File
                 {
                     Name = remoteName,
-                    Parents = _appFolderId != null ? [_appFolderId] : null
+                    Parents = parentId != null ? [parentId] : null
                 };
 
                 var createRequest = driveService.Files.Create(fileMetadata, stream, "application/octet-stream");
@@ -233,17 +239,72 @@ public class GoogleDriveService : ICloudStorageService, IDisposable
         }, cancellationToken: cancellationToken);
     }
 
-    private async Task<string?> FindFileByNameAsync(DriveService driveService, string fileName, CancellationToken cancellationToken)
+    private static async Task<string?> FindFileByNameAsync(DriveService driveService, string? parentId,
+        string fileName, CancellationToken cancellationToken)
     {
-        if (_appFolderId == null) return null;
+        if (parentId == null) return null;
 
         var listRequest = driveService.Files.List();
-        listRequest.Q = $"name = '{EscapeQueryValue(fileName)}' and '{_appFolderId}' in parents and trashed = false";
+        listRequest.Q = $"name = '{EscapeQueryValue(fileName)}' and '{EscapeQueryValue(parentId)}' in parents and trashed = false";
         listRequest.Fields = "files(id)";
 
         var result = await listRequest.ExecuteAsync(cancellationToken);
         return result.Files.FirstOrDefault()?.Id;
     }
+
+    public async Task<CloudFile> CreateFolderAsync(string? parentId, string name,
+        CancellationToken cancellationToken = default)
+    {
+        var driveService = EnsureAuthenticated();
+
+        var parent = parentId ?? _appFolderId;
+
+        return await RetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var existing = await FindFolderByNameAsync(driveService, parent, name, cancellationToken);
+            if (existing != null) return existing;
+
+            var metadata = new Google.Apis.Drive.v3.Data.File
+            {
+                Name = name,
+                MimeType = CloudMimeTypes.GoogleFolder,
+                Parents = parent != null ? [parent] : null
+            };
+
+            var createRequest = driveService.Files.Create(metadata);
+            createRequest.Fields = "id, name, mimeType, modifiedTime, parents";
+
+            var created = await createRequest.ExecuteAsync(cancellationToken);
+
+            return ToCloudFile(created, parent);
+        }, cancellationToken: cancellationToken);
+    }
+
+    private static async Task<CloudFile?> FindFolderByNameAsync(DriveService driveService, string? parentId,
+        string name, CancellationToken cancellationToken)
+    {
+        if (parentId == null) return null;
+
+        var listRequest = driveService.Files.List();
+        listRequest.Q = $"name = '{EscapeQueryValue(name)}' and '{EscapeQueryValue(parentId)}' in parents " +
+                        $"and mimeType = '{CloudMimeTypes.GoogleFolder}' and trashed = false";
+        listRequest.Fields = "files(id, name, mimeType, modifiedTime, parents)";
+
+        var result = await listRequest.ExecuteAsync(cancellationToken);
+        var folder = result.Files.FirstOrDefault();
+
+        return folder == null ? null : ToCloudFile(folder, parentId);
+    }
+
+    private static CloudFile ToCloudFile(Google.Apis.Drive.v3.Data.File file, string? fallbackParentId) => new(
+        file.Id,
+        file.Name,
+        file.MimeType,
+        file.Size,
+        file.ModifiedTimeDateTimeOffset?.DateTime,
+        file.Parents?.FirstOrDefault() ?? fallbackParentId);
 
     private static string EscapeQueryValue(string value)
     {

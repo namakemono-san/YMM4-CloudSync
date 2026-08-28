@@ -49,4 +49,35 @@ public class CloudFileTests
         Assert.Single(listed);
         Assert.Equal("real.ymmx", listed[0].Name);
     }
+
+    [Fact]
+    public void AssetsFolder_IsInvisibleToTheProjectList()
+    {
+        var entries = new[]
+        {
+            File("real.ymmx", "application/octet-stream"),
+            File(CloudAssetRoot.FolderName, CloudMimeTypes.DropboxFolder)
+        };
+
+        var listed = entries
+            .Where(f => !f.IsFolder && f.Name.EndsWith(".ymmx", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        Assert.Single(listed);
+        Assert.Equal("real.ymmx", listed[0].Name);
+    }
+
+    [Fact]
+    public void WebDavCollection_IsAFolder()
+    {
+        Assert.True(File("素材", CloudMimeTypes.WebDavCollection).IsFolder);
+    }
+
+    [Fact]
+    public void ParentId_IsCarried()
+    {
+        var file = new CloudFile("id", "a.png", "image/png", 1, DateTime.UnixEpoch, "parent");
+
+        Assert.Equal("parent", file.ParentId);
+    }
 }

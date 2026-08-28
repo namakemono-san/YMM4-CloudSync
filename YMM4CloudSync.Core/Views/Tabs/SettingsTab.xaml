@@ -91,6 +91,39 @@
                                  Opacity="0.6" TextWrapping="NoWrap"/>
                     </Grid>
 
+                    <Grid Margin="0,0,0,4">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" SharedSizeGroup="LabelCol"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <Label Grid.Row="0" Grid.Column="0" Content="アセット保存先" VerticalAlignment="Center" Margin="0,0,10,0"/>
+
+                        <TextBox Grid.Row="0" Grid.Column="1" VerticalContentAlignment="Center"
+                                 Text="{Binding AssetDirectory.Value, UpdateSourceTrigger=PropertyChanged, Delay=500}"/>
+
+                        <StackPanel Grid.Row="0" Grid.Column="2" Orientation="Horizontal" Margin="5,0,0,0">
+                            <Button Content="..." Command="{Binding BrowseAssetDirCommand}"
+                                    Style="{StaticResource IconButtonStyle}" ToolTip="フォルダを参照"/>
+                            <Button Content="初期値" Command="{Binding ResetAssetDirCommand}"
+                                    Style="{StaticResource TextButtonStyle}" ToolTip="デフォルトに戻す"/>
+                        </StackPanel>
+
+                        <TextBox Grid.Row="1" Grid.Column="1" Margin="0,2,0,0"
+                                 VerticalContentAlignment="Center" MinHeight="22" FontSize="11"
+                                 Background="Transparent" BorderBrush="Transparent" IsReadOnly="True"
+                                 Text="{Binding AssetDirectoryPreview.Value, Mode=OneWay}"
+                                 Opacity="0.6" TextWrapping="NoWrap"/>
+                    </Grid>
+
+                    <TextBlock Margin="0,0,0,15" FontSize="11" Foreground="Gray" TextWrapping="Wrap"
+                               Text="※アセットタブでダウンロードした素材の保存先です。YMM4 は素材を絶対パスで参照するため、このフォルダを移動・削除すると、素材を配置済みのプロジェクトのリンクが切れます。"/>
+
                     <Grid>
                         <Label Content="起動時にアップデートを確認する"/>
                         <controls:ToggleSlider HorizontalAlignment="Right"

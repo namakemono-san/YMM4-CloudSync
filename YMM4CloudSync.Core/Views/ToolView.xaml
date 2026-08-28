@@ -11,6 +11,10 @@
             <tabs:ProjectTab />
         </TabItem>
 
+        <TabItem Header="アセット">
+            <tabs:AssetTab />
+        </TabItem>
+
         <TabItem Header="連携">
             <tabs:ConnectionTab />
         </TabItem>

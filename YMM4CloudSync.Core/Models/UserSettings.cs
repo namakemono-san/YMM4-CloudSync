@@ -10,6 +10,7 @@ public class UserSettings : INotifyPropertyChanged
     {
         CacheDirectory = Path.Combine(Path.GetTempPath(), "YMM4CloudSync");
         ProjectDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "YMM4CloudSync", "Projects");
+        AssetDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "YMM4CloudSync", "Assets");
         EnableUpdateCheck = true;
     }
 
@@ -20,6 +21,12 @@ public class UserSettings : INotifyPropertyChanged
     }
 
     public string ProjectDirectory
+    {
+        get;
+        set => SetProperty(ref field, value);
+    }
+
+    public string AssetDirectory
     {
         get;
         set => SetProperty(ref field, value);

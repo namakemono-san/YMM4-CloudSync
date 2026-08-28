@@ -74,6 +74,59 @@ public class PathTagResolverTests
     }
 
     [Fact]
+    public void CombineWithin_Segments_BuildsAHierarchy()
+    {
+        Assert.Equal(
+            @"D:\assets\google-drive\背景\森\朝.png",
+            PathTagResolver.CombineWithin(@"D:\assets", ["google-drive", "背景", "森", "朝.png"], "asset"));
+    }
+
+    [Fact]
+    public void CombineWithin_Segments_ReturnsTheBase_ForAnEmptyList()
+    {
+        Assert.Equal(@"D:\assets", PathTagResolver.CombineWithin(@"D:\assets", [], "asset"));
+    }
+
+    [Fact]
+    public void CombineWithin_Segments_SanitisesEverySegment()
+    {
+        Assert.Equal(
+            @"D:\assets\a_b\c_d.png",
+            PathTagResolver.CombineWithin(@"D:\assets", ["a:b", "c?d.png"], "asset"));
+    }
+
+    [Fact]
+    public void CombineWithin_Segments_KeepsAnAbsoluteSegmentInside()
+    {
+        var result = PathTagResolver.CombineWithin(@"D:\assets", [@"C:\windows", "a.png"], "asset");
+
+        Assert.StartsWith(@"D:\assets\", result, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CombineWithin_Segments_FallsBackWhenASegmentIsTraversal()
+    {
+        Assert.Equal(
+            @"D:\assets\asset\a.png",
+            PathTagResolver.CombineWithin(@"D:\assets", ["..", "a.png"], "asset"));
+    }
+
+    [Fact]
+    public void DefaultAssetDirectory_IsNotUnderTemp()
+    {
+        Assert.DoesNotContain(
+            Path.GetFullPath(Path.GetTempPath()),
+            Path.GetFullPath(PathTagResolver.DefaultAssetDirectory),
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void DefaultAssetDirectory_IsSeparateFromProjects()
+    {
+        Assert.NotEqual(PathTagResolver.DefaultProjectDirectory, PathTagResolver.DefaultAssetDirectory);
+    }
+
+    [Fact]
     public void DefaultCacheDirectory_IsUnderTemp()
     {
         Assert.StartsWith(

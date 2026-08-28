@@ -14,6 +14,10 @@ public static class PathTagResolver
     public static string DefaultCacheDirectory => Path.Combine(
         Path.GetTempPath(), "YMM4CloudSync");
 
+    public static string DefaultAssetDirectory => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "YMM4CloudSync", "Assets");
+
     public static string Resolve(string? rawPath, string? projectDirectory, string? ymmUserDirectory)
     {
         if (string.IsNullOrWhiteSpace(rawPath)) return "";
@@ -70,6 +74,18 @@ public static class PathTagResolver
         }
 
         return combined;
+    }
+
+    public static string CombineWithin(string baseDirectory, IReadOnlyList<string> segments, string fallbackName)
+    {
+        var current = Path.GetFullPath(baseDirectory);
+
+        foreach (var segment in segments)
+        {
+            current = CombineWithin(current, segment, fallbackName);
+        }
+
+        return current;
     }
 
     private static readonly Lazy<string> DiscoveredYmmUserDirectory =

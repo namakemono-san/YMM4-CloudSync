@@ -24,6 +24,8 @@ public sealed class WebDavService : ICloudStorageService, IDisposable
 
     public string ServiceName => $"WebDAV ({Settings.ResolveDisplayName()})";
 
+    public string ConnectionKey => $"webdav_{Settings.Id}";
+
     public bool IsAuthenticated => _client != null;
 
     public static Uri ValidateAndBuildUri(WebDavSettings settings)
@@ -136,8 +138,8 @@ public sealed class WebDavService : ICloudStorageService, IDisposable
             .ToList();
     }
 
-    public async Task<string> UploadFileAsync(string localPath, string remotePath,
-        IProgress<double>? progress = null, CancellationToken cancellationToken = default)
+    private async Task<string> UploadToBasePathAsync(string localPath, string remotePath,
+        IProgress<double>? progress, CancellationToken cancellationToken)
     {
         var client = EnsureAuthenticated();
 
@@ -156,6 +158,55 @@ public sealed class WebDavService : ICloudStorageService, IDisposable
         progress?.Report(100.0);
 
         return target;
+    }
+
+    public async Task<string> UploadFileToFolderAsync(string localPath, string? parentFolderId, string fileName,
+        IProgress<double>? progress = null, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrEmpty(parentFolderId))
+        {
+            return await UploadToBasePathAsync(localPath, fileName, progress, cancellationToken);
+        }
+
+        var client = EnsureAuthenticated();
+
+        if (!File.Exists(localPath))
+            throw new FileNotFoundException("ファイルが見つかりません。", localPath);
+
+        var target = $"{parentFolderId.TrimEnd('/')}/{fileName.Replace('\\', '/').Trim('/')}";
+        var length = new FileInfo(localPath).Length;
+
+        await RetryHelper.ExecuteWithRetryAsync(
+            () => client.UploadAsync(target, localPath, length, progress, cancellationToken),
+            cancellationToken: cancellationToken);
+
+        progress?.Report(100.0);
+
+        return target;
+    }
+
+    public async Task<CloudFile> CreateFolderAsync(string? parentId, string name,
+        CancellationToken cancellationToken = default)
+    {
+        var client = EnsureAuthenticated();
+
+        string target;
+
+        if (string.IsNullOrEmpty(parentId))
+        {
+            await EnsureBaseDirectoryAsync(cancellationToken);
+            target = CombineWithBasePath(name);
+        }
+        else
+        {
+            target = $"{parentId.TrimEnd('/')}/{name.Replace('\\', '/').Trim('/')}";
+        }
+
+        await RetryHelper.ExecuteWithRetryAsync(
+            () => client.CreateDirectoryAsync(target, cancellationToken),
+            cancellationToken: cancellationToken);
+
+        return new CloudFile(target, name, CloudMimeTypes.WebDavCollection, null, null, GetParentPath(target));
     }
 
     public async Task DownloadFileAsync(string remoteFileId, string localPath,

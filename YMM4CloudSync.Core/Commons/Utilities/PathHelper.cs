@@ -9,6 +9,8 @@ public static class PathHelper
 
     public static string DefaultCacheDirectory => PathTagResolver.DefaultCacheDirectory;
 
+    public static string DefaultAssetDirectory => PathTagResolver.DefaultAssetDirectory;
+
     public static string ResolvePath(string? rawPath, string? projectDirectory = null)
         => PathTagResolver.Resolve(rawPath, projectDirectory, GetYmmUserDirectory());
 
@@ -20,6 +22,9 @@ public static class PathHelper
 
     public static string CombineWithin(string baseDirectory, string? fileName, string fallbackName)
         => PathTagResolver.CombineWithin(baseDirectory, fileName, fallbackName);
+
+    public static string CombineWithin(string baseDirectory, IReadOnlyList<string> segments, string fallbackName)
+        => PathTagResolver.CombineWithin(baseDirectory, segments, fallbackName);
 
     private static string? GetYmmUserDirectory()
     {

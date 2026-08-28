@@ -506,7 +506,7 @@ public sealed class ProjectTabViewModel : INotifyPropertyChanged, IDisposable
 
             SetStage("アップロード中...");
 
-            await service.UploadFileAsync(tempYmmxPath, $"{projectName}.ymmx",
+            await service.UploadFileToFolderAsync(tempYmmxPath, null, $"{projectName}.ymmx",
                 CreateProgress("アップロード中..."), token);
 
             await RefreshAsync(token);

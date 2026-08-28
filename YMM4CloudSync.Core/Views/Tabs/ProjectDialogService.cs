@@ -103,6 +103,22 @@ public sealed class ProjectDialogService : IProjectDialogService
         });
     }
 
+    public string[]? PickFilesToUpload(string title)
+    {
+        return Dispatcher.Invoke(() =>
+        {
+            var dialog = new OpenFileDialog
+            {
+                Title = title,
+                Filter = "すべてのファイル (*.*)|*.*",
+                Multiselect = true,
+                CheckFileExists = true
+            };
+
+            return dialog.ShowDialog() == true ? dialog.FileNames : null;
+        });
+    }
+
     public void OpenContainingFolder(string filePath)
     {
         try

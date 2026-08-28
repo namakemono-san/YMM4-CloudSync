@@ -30,18 +30,24 @@ public class ToolViewModel : IDisposable
     
     public ReactiveProperty<string> ProjectDirectory { get; }
     public ReactiveProperty<string> CacheDirectory { get; }
-    
+    public ReactiveProperty<string> AssetDirectory { get; }
+
     public ReadOnlyReactivePropertySlim<string?> ProjectDirectoryPreview { get; }
     public ReadOnlyReactivePropertySlim<string?> CacheDirectoryPreview { get; }
+    public ReadOnlyReactivePropertySlim<string?> AssetDirectoryPreview { get; }
 
     public ReactiveCommand BrowseProjectDirCommand { get; }
     public ReactiveCommand BrowseCacheDirCommand { get; }
+    public ReactiveCommand BrowseAssetDirCommand { get; }
     public ReactiveCommand ResetProjectDirCommand { get; }
     public ReactiveCommand ResetCacheDirCommand { get; }
-    
+    public ReactiveCommand ResetAssetDirCommand { get; }
+
     private static string DefaultProjectDir => PathHelper.DefaultProjectDirectory;
 
     private static string DefaultCacheDir => PathHelper.DefaultCacheDirectory;
+
+    private static string DefaultAssetDir => PathHelper.DefaultAssetDirectory;
 
     public ToolViewModel()
     {
@@ -71,9 +77,14 @@ public class ToolViewModel : IDisposable
         CacheDirectory = new ReactiveProperty<string>(Settings.CacheDirectory)
             .AddTo(_disposables);
 
+        AssetDirectory = new ReactiveProperty<string>(Settings.AssetDirectory)
+            .AddTo(_disposables);
+
         ProjectDirectory.Subscribe(x => Settings.ProjectDirectory = x).AddTo(_disposables);
 
         CacheDirectory.Subscribe(x => Settings.CacheDirectory = x).AddTo(_disposables);
+
+        AssetDirectory.Subscribe(x => Settings.AssetDirectory = x).AddTo(_disposables);
 
         ProjectDirectoryPreview = ProjectDirectory
             .Select(PathHelper.ResolveProjectDirectory)
@@ -82,6 +93,11 @@ public class ToolViewModel : IDisposable
 
         CacheDirectoryPreview = CacheDirectory
             .CombineLatest(ProjectDirectory, (cache, project) => PathHelper.ResolvePath(cache, project))
+            .ToReadOnlyReactivePropertySlim()
+            .AddTo(_disposables);
+
+        AssetDirectoryPreview = AssetDirectory
+            .CombineLatest(ProjectDirectory, (asset, project) => PathHelper.ResolvePath(asset, project))
             .ToReadOnlyReactivePropertySlim()
             .AddTo(_disposables);
 
@@ -108,7 +124,21 @@ public class ToolViewModel : IDisposable
         ResetCacheDirCommand = new ReactiveCommand()
             .WithSubscribe(() => CacheDirectory.Value = DefaultCacheDir)
             .AddTo(_disposables);
+
+        BrowseAssetDirCommand = new ReactiveCommand()
+            .WithSubscribe(() =>
+            {
+                var path = SelectFolder("アセット保存先を選択", AssetDirectory.Value);
+                if (!string.IsNullOrEmpty(path)) AssetDirectory.Value = path;
+            })
+            .AddTo(_disposables);
+
+        ResetAssetDirCommand = new ReactiveCommand()
+            .WithSubscribe(() => AssetDirectory.Value = DefaultAssetDir)
+            .AddTo(_disposables);
     }
+
+    public string ResolvedAssetDirectory => PathHelper.ResolvePath(Settings.AssetDirectory, Settings.ProjectDirectory);
     
     public void AttachDisposable(IDisposable disposable) => _disposables.Add(disposable);
 

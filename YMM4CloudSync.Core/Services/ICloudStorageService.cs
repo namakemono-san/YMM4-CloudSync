@@ -10,6 +10,8 @@ public interface ICloudStorageService
     /// </summary>
     string ServiceName { get; }
 
+    string ConnectionKey { get; }
+
     /// <summary>
     /// Gets a value indicating whether the user is currently authenticated.
     /// </summary>
@@ -35,18 +37,6 @@ public interface ICloudStorageService
     Task<List<CloudFile>> ListFilesAsync(string? folderId = null, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Uploads a local file to cloud storage.
-    /// </summary>
-    /// <param name="localPath">The full path to the local file to upload.</param>
-    /// <param name="remotePath">The destination path/name in cloud storage.</param>
-    /// <param name="progress">Optional progress reporter for upload percentage (0-100).</param>
-    /// <returns>The unique file ID in cloud storage.</returns>
-    /// <exception cref="FileNotFoundException">Thrown when the local file doesn't exist.</exception>
-    /// <exception cref="InvalidOperationException">Thrown when not authenticated or upload fails.</exception>
-    Task<string> UploadFileAsync(string localPath, string remotePath, IProgress<double>? progress = null,
-        CancellationToken cancellationToken = default);
-
-    /// <summary>
     /// Downloads a file from cloud storage to a local path.
     /// </summary>
     /// <param name="remoteFileId">The unique ID of the file in cloud storage.</param>
@@ -62,6 +52,12 @@ public interface ICloudStorageService
     /// <param name="fileId">The unique ID of the file to delete.</param>
     /// <exception cref="InvalidOperationException">Thrown when not authenticated or deletion fails.</exception>
     Task DeleteFileAsync(string fileId, CancellationToken cancellationToken = default);
+
+    Task<CloudFile> CreateFolderAsync(string? parentId, string name,
+        CancellationToken cancellationToken = default);
+
+    Task<string> UploadFileToFolderAsync(string localPath, string? parentFolderId, string fileName,
+        IProgress<double>? progress = null, CancellationToken cancellationToken = default);
 }
 
 /// <summary>

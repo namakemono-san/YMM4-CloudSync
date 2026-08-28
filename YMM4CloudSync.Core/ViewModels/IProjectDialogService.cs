@@ -19,6 +19,8 @@ public interface IProjectDialogService
 
     string? PickYmmxDestination(string title, string suggestedFileName);
 
+    string[]? PickFilesToUpload(string title);
+
     void OpenContainingFolder(string filePath);
 
     void ReportException(Exception exception);

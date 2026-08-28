@@ -15,6 +15,8 @@ public class DropboxService : ICloudStorageService, IDisposable
 {
     public string ServiceName => "Dropbox";
 
+    public string ConnectionKey => "dropbox";
+
     private const string AppKey = DropboxCredentials.ClientId;
 
     private static readonly int[] RedirectPorts = [52475, 52476, 52477];
@@ -311,8 +313,8 @@ public class DropboxService : ICloudStorageService, IDisposable
         }
     }
 
-    public async Task<string> UploadFileAsync(string localPath, string remotePath,
-        IProgress<double>? progress = null, CancellationToken cancellationToken = default)
+    private async Task<string> UploadToPathAsync(string localPath, string remotePath,
+        IProgress<double>? progress, CancellationToken cancellationToken)
     {
         var client = EnsureAuthenticated();
 
@@ -326,6 +328,45 @@ public class DropboxService : ICloudStorageService, IDisposable
         return fileInfo.Length >= UploadLimitBytes
             ? await UploadLargeFileAsync(client, localPath, uploadPath, fileInfo.Length, progress, cancellationToken)
             : await UploadSmallFileAsync(client, localPath, uploadPath, fileInfo.Length, progress, cancellationToken);
+    }
+
+    public Task<string> UploadFileToFolderAsync(string localPath, string? parentFolderId, string fileName,
+        IProgress<double>? progress = null, CancellationToken cancellationToken = default)
+        => UploadToPathAsync(localPath, CombinePath(parentFolderId, fileName), progress, cancellationToken);
+
+    public async Task<CloudFile> CreateFolderAsync(string? parentId, string name,
+        CancellationToken cancellationToken = default)
+    {
+        var client = EnsureAuthenticated();
+
+        var path = NormalizePathForApi(CombinePath(parentId, name));
+
+        return await RetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            try
+            {
+                var result = await client.Files.CreateFolderV2Async(path);
+
+                return ToCloudFile(result.Metadata.PathDisplay ?? path, result.Metadata.Name);
+            }
+            catch (ApiException<CreateFolderError> ex) when (ex.ErrorResponse.IsPath
+                                                             && ex.ErrorResponse.AsPath.Value.IsConflict)
+            {
+                return ToCloudFile(path, name);
+            }
+        }, cancellationToken: cancellationToken);
+    }
+
+    private static CloudFile ToCloudFile(string path, string name)
+        => new(path, name, CloudMimeTypes.DropboxFolder, null, null, GetParentPath(path));
+
+    private static string CombinePath(string? parentPath, string name)
+    {
+        var trimmedName = name.Replace('\\', '/').Trim('/');
+
+        return string.IsNullOrEmpty(parentPath) ? "/" + trimmedName : parentPath.TrimEnd('/') + "/" + trimmedName;
     }
 
     private static async Task<string> UploadSmallFileAsync(DropboxClient client, string localPath, string remotePath, long totalSize,
@@ -348,7 +389,7 @@ public class DropboxService : ICloudStorageService, IDisposable
         progress?.Report(100.0);
         _ = totalSize;
 
-        return metadata.Id;
+        return metadata.PathDisplay ?? remotePath;
     }
 
     private static async Task<string> UploadLargeFileAsync(DropboxClient client, string localPath, string remotePath, long totalSize,
@@ -431,7 +472,7 @@ public class DropboxService : ICloudStorageService, IDisposable
         }, cancellationToken: cancellationToken);
 
         progress?.Report(100.0);
-        return metadata.Id;
+        return metadata.PathDisplay ?? remotePath;
     }
 
     private static async Task CloseSessionQuietlyAsync(DropboxClient client, string sessionId, long offset)

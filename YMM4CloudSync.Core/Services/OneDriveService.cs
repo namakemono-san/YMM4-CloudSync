@@ -15,6 +15,8 @@ namespace YMM4CloudSync.Core.Services;
 public sealed class OneDriveService : ICloudStorageService, IDisposable
 {
     public string ServiceName => "OneDrive";
+
+    public string ConnectionKey => "onedrive";
     public bool IsAuthenticated => _pca != null && _account != null;
 
     private static readonly string[] Scopes = ["Files.ReadWrite.AppFolder"];
@@ -187,8 +189,17 @@ public sealed class OneDriveService : ICloudStorageService, IDisposable
         return list;
     }
 
-    public async Task<string> UploadFileAsync(string localPath, string remotePath,
+    public Task<string> UploadFileToFolderAsync(string localPath, string? parentFolderId, string fileName,
         IProgress<double>? progress = null, CancellationToken cancellationToken = default)
+        => UploadCoreAsync(localPath, BuildItemTarget(parentFolderId, fileName), progress, cancellationToken);
+
+    private static string BuildItemTarget(string? parentFolderId, string relativePath)
+        => string.IsNullOrEmpty(parentFolderId)
+            ? $"special/approot:/{EscapePath(relativePath)}:"
+            : $"items/{Uri.EscapeDataString(parentFolderId)}:/{EscapePath(relativePath)}:";
+
+    private async Task<string> UploadCoreAsync(string localPath, string itemTarget,
+        IProgress<double>? progress, CancellationToken cancellationToken)
     {
         EnsureAuthenticated();
 
@@ -199,7 +210,7 @@ public sealed class OneDriveService : ICloudStorageService, IDisposable
 
         if (fileInfo.Length > ChunkThresholdBytes)
         {
-            return await UploadLargeFileAsync(localPath, remotePath, progress, cancellationToken);
+            return await UploadLargeFileAsync(localPath, itemTarget, progress, cancellationToken);
         }
 
         return await RetryHelper.ExecuteWithRetryAsync(async () =>
@@ -207,7 +218,7 @@ public sealed class OneDriveService : ICloudStorageService, IDisposable
             cancellationToken.ThrowIfCancellationRequested();
 
             await using var fs = new FileStream(localPath, FileMode.Open, FileAccess.Read, FileShare.Read);
-            var url = $"{GraphBase}/me/drive/special/approot:/{EscapePath(remotePath)}:/content";
+            var url = $"{GraphBase}/me/drive/{itemTarget}/content";
 
             using var content = new ProgressStreamContent(fs, fs.Length, progress);
             content.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
@@ -223,10 +234,10 @@ public sealed class OneDriveService : ICloudStorageService, IDisposable
         }, cancellationToken: cancellationToken);
     }
 
-    private async Task<string> UploadLargeFileAsync(string localPath, string remotePath,
+    private async Task<string> UploadLargeFileAsync(string localPath, string itemTarget,
         IProgress<double>? progress, CancellationToken cancellationToken)
     {
-        var sessionUrl = await CreateUploadSessionAsync(remotePath, cancellationToken);
+        var sessionUrl = await CreateUploadSessionAsync(itemTarget, cancellationToken);
 
         try
         {
@@ -289,12 +300,11 @@ public sealed class OneDriveService : ICloudStorageService, IDisposable
         }
     }
 
-    private async Task<string> CreateUploadSessionAsync(string remotePath, CancellationToken cancellationToken)
+    private async Task<string> CreateUploadSessionAsync(string itemTarget, CancellationToken cancellationToken)
     {
-        var url = $"{GraphBase}/me/drive/special/approot:/{EscapePath(remotePath)}:/createUploadSession";
+        var url = $"{GraphBase}/me/drive/{itemTarget}/createUploadSession";
 
-        var body = new { item = new { name = Path.GetFileName(remotePath) } };
-        var json = JsonSerializer.Serialize(body);
+        var json = JsonSerializer.Serialize(new { item = new Dictionary<string, object>() });
 
         return await RetryHelper.ExecuteWithRetryAsync(async () =>
         {
@@ -380,6 +390,117 @@ public sealed class OneDriveService : ICloudStorageService, IDisposable
         {
             Debug.WriteLine($"[OneDrive] Failed to delete temporary file: {ex.Message}");
         }
+    }
+
+    public async Task<CloudFile> CreateFolderAsync(string? parentId, string name,
+        CancellationToken cancellationToken = default)
+    {
+        EnsureAuthenticated();
+
+        var parent = parentId;
+
+        if (string.IsNullOrEmpty(parent))
+        {
+            parent = await EnsureAppRootIdAsync(cancellationToken)
+                     ?? throw new InvalidOperationException(
+                         "OneDrive のアプリフォルダーを準備できませんでした。\n" +
+                         "連携を解除して再連携するか、時間をおいて再試行してください。");
+        }
+
+        var url = $"{GraphBase}/me/drive/items/{Uri.EscapeDataString(parent)}/children";
+
+        var json = JsonSerializer.Serialize(new Dictionary<string, object>
+        {
+            ["name"] = name,
+            ["folder"] = new Dictionary<string, object>(),
+            ["@microsoft.graph.conflictBehavior"] = "fail"
+        });
+
+        return await RetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            using var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+            using var resp = await SendAsync(HttpMethod.Post, url, content,
+                cancellationToken: cancellationToken);
+
+            if (resp.StatusCode == System.Net.HttpStatusCode.Conflict)
+            {
+                var existing = await ListFilesAsync(parent, cancellationToken);
+
+                var match = existing.FirstOrDefault(f =>
+                    f.IsFolder && string.Equals(f.Name, name, StringComparison.OrdinalIgnoreCase));
+
+                if (match != null) return match;
+            }
+
+            await EnsureSuccessOrThrowAsync(resp);
+
+            await using var s = await resp.Content.ReadAsStreamAsync(cancellationToken);
+            using var doc = await JsonDocument.ParseAsync(s, cancellationToken: cancellationToken);
+
+            var root = doc.RootElement;
+
+            return new CloudFile(
+                root.GetProperty("id").GetString() ?? "",
+                root.GetProperty("name").GetString() ?? name,
+                CloudMimeTypes.OneDriveFolder,
+                null,
+                root.TryGetProperty("lastModifiedDateTime", out var lm) ? lm.GetDateTime() : null,
+                parent);
+        }, cancellationToken: cancellationToken);
+    }
+
+    private async Task<string?> EnsureAppRootIdAsync(CancellationToken cancellationToken)
+    {
+        var id = await TryGetAppRootIdAsync(cancellationToken);
+
+        if (id != null) return id;
+
+        await MaterializeAppRootAsync(cancellationToken);
+
+        return await TryGetAppRootIdAsync(cancellationToken);
+    }
+
+    private async Task<string?> TryGetAppRootIdAsync(CancellationToken cancellationToken)
+    {
+        using var resp = await SendAsync(HttpMethod.Get, $"{GraphBase}/me/drive/special/approot", null,
+            cancellationToken: cancellationToken);
+
+        if (!resp.IsSuccessStatusCode) return null;
+
+        await using var s = await resp.Content.ReadAsStreamAsync(cancellationToken);
+        using var doc = await JsonDocument.ParseAsync(s, cancellationToken: cancellationToken);
+
+        return doc.RootElement.TryGetProperty("id", out var id) ? id.GetString() : null;
+    }
+
+    private async Task MaterializeAppRootAsync(CancellationToken cancellationToken)
+    {
+        using var content = new ByteArrayContent([]);
+        content.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
+
+        using var resp = await SendAsync(HttpMethod.Put,
+            $"{GraphBase}/me/drive/special/approot:/.ymm4cloudsync:/content", content,
+            cancellationToken: cancellationToken);
+
+        if (!resp.IsSuccessStatusCode) return;
+
+        await using var s = await resp.Content.ReadAsStreamAsync(cancellationToken);
+        using var doc = await JsonDocument.ParseAsync(s, cancellationToken: cancellationToken);
+
+        if (!doc.RootElement.TryGetProperty("id", out var idValue)) return;
+
+        var id = idValue.GetString();
+
+        if (string.IsNullOrEmpty(id)) return;
+
+        using var delete = await SendAsync(HttpMethod.Delete,
+            $"{GraphBase}/me/drive/items/{Uri.EscapeDataString(id)}", null,
+            cancellationToken: cancellationToken);
+
+        Debug.WriteLine($"[OneDrive] Placeholder cleanup: {delete.StatusCode}");
     }
 
     public async Task DeleteFileAsync(string fileId, CancellationToken cancellationToken = default)
