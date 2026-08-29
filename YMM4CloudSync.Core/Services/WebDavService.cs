@@ -218,7 +218,7 @@ public sealed class WebDavService : ICloudStorageService, IDisposable
         if (!string.IsNullOrEmpty(directory))
             Directory.CreateDirectory(directory);
 
-        var tempPath = localPath + ".tmp";
+        var tempPath = $"{localPath}.{Guid.NewGuid():N}.tmp";
 
         try
         {
@@ -307,7 +307,7 @@ public sealed class WebDavService : ICloudStorageService, IDisposable
     private WebDavClient EnsureAuthenticated()
     {
         return _client
-               ?? throw new InvalidOperationException("WebDAV に接続されていません。連携タブから接続設定を行ってください。");
+               ?? throw new CloudNotAuthenticatedException("WebDAV に接続されていません。連携タブから接続設定を行ってください。");
     }
 
     private static void DeleteTempFileQuietly(string tempPath)

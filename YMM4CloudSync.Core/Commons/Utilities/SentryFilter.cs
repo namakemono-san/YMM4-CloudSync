@@ -1,6 +1,7 @@
 using System.IO;
 using System.Net.Http;
 using System.Net.Sockets;
+using YMM4CloudSync.Core.Services;
 
 namespace YMM4CloudSync.Core.Commons.Utilities;
 
@@ -13,6 +14,8 @@ public static class SentryFilter
         if (exception == null) return false;
 
         if (IsUserCancellation(exception)) return false;
+
+        if (exception is CloudNotAuthenticatedException) return false;
 
         return !IsUnactionableNetworkError(exception);
     }

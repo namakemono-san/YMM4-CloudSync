@@ -12,7 +12,7 @@ public static class CloudAssetRoot
         var match = entries.FirstOrDefault(e =>
             string.Equals(e.Name, FolderName, StringComparison.OrdinalIgnoreCase));
 
-        if (match is { IsFolder: true }) return match.Id;
+        if (match is { IsFolder: true } && !string.IsNullOrEmpty(match.Id)) return match.Id;
 
         if (match != null)
         {
@@ -22,6 +22,13 @@ public static class CloudAssetRoot
         }
 
         var created = await service.CreateFolderAsync(null, FolderName, cancellationToken);
+
+        if (string.IsNullOrEmpty(created.Id))
+        {
+            throw new InvalidOperationException(
+                $"クラウド上に「{FolderName}」フォルダーを作成しましたが、識別子を取得できませんでした。\n" +
+                "連携を解除して接続し直してから、もう一度お試しください。");
+        }
 
         return created.Id;
     }

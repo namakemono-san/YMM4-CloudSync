@@ -349,7 +349,7 @@ public sealed class OneDriveService : ICloudStorageService, IDisposable
         if (!string.IsNullOrEmpty(dir))
             Directory.CreateDirectory(dir);
 
-        var tempPath = localPath + ".tmp";
+        var tempPath = $"{localPath}.{Guid.NewGuid():N}.tmp";
 
         try
         {
@@ -532,7 +532,7 @@ public sealed class OneDriveService : ICloudStorageService, IDisposable
     {
         EnsureClient();
         if (_account == null)
-            throw new InvalidOperationException("OneDrive に連携されていません。\n連携タブからサインインしてください。");
+            throw new CloudNotAuthenticatedException("OneDrive に連携されていません。\n連携タブからサインインしてください。");
     }
 
     private async Task<string> GetAccessTokenAsync(CancellationToken cancellationToken)
@@ -540,7 +540,7 @@ public sealed class OneDriveService : ICloudStorageService, IDisposable
         EnsureClient();
 
         if (_account == null)
-            throw new InvalidOperationException("OneDrive に連携されていません。\n連携タブからサインインしてください。");
+            throw new CloudNotAuthenticatedException("OneDrive に連携されていません。\n連携タブからサインインしてください。");
 
         var result = await _pca!.AcquireTokenSilent(Scopes, _account).ExecuteAsync(cancellationToken);
         return result.AccessToken;

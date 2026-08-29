@@ -613,8 +613,13 @@ public sealed class ProjectTabViewModel : INotifyPropertyChanged, IDisposable
         {
             if (File.Exists(path)) File.Delete(path);
 
-            var tempPath = path + ".tmp";
-            if (File.Exists(tempPath)) File.Delete(tempPath);
+            var directory = Path.GetDirectoryName(path);
+            if (string.IsNullOrEmpty(directory)) return;
+
+            foreach (var leftover in Directory.EnumerateFiles(directory, Path.GetFileName(path) + "*.tmp"))
+            {
+                try { File.Delete(leftover); } catch { }
+            }
         }
         catch (Exception ex)
         {

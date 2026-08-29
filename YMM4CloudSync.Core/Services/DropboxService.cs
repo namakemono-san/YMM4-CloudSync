@@ -500,7 +500,7 @@ public class DropboxService : ICloudStorageService, IDisposable
         if (!string.IsNullOrEmpty(dir))
             Directory.CreateDirectory(dir);
 
-        var tempPath = localPath + ".tmp";
+        var tempPath = $"{localPath}.{Guid.NewGuid():N}.tmp";
 
         try
         {
@@ -561,7 +561,7 @@ public class DropboxService : ICloudStorageService, IDisposable
     private DropboxClient EnsureAuthenticated()
     {
         return _client
-               ?? throw new InvalidOperationException("Dropboxに認証されていません。連携タブからサインインしてください。");
+               ?? throw new CloudNotAuthenticatedException("Dropboxに認証されていません。連携タブからサインインしてください。");
     }
 
     private static string? GetParentPath(string? path)

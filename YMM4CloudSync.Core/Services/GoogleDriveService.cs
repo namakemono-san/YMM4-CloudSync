@@ -176,7 +176,7 @@ public class GoogleDriveService : ICloudStorageService, IDisposable
         if (!File.Exists(localPath))
             throw new FileNotFoundException("アップロードするファイルが見つかりません。", localPath);
 
-        var parentId = parentFolderId ?? _appFolderId;
+        var parentId = string.IsNullOrEmpty(parentFolderId) ? _appFolderId : parentFolderId;
 
         return await RetryHelper.ExecuteWithRetryAsync(async () =>
         {
@@ -188,7 +188,7 @@ public class GoogleDriveService : ICloudStorageService, IDisposable
             var totalSize = stream.Length;
 
             Google.Apis.Upload.IUploadProgress result;
-            string fileId;
+            string? fileId;
 
             if (existingFileId != null)
             {
@@ -224,7 +224,7 @@ public class GoogleDriveService : ICloudStorageService, IDisposable
                 };
 
                 result = await createRequest.UploadAsync(cancellationToken);
-                fileId = createRequest.ResponseBody?.Id ?? throw new Exception("アップロード後のファイルIDを取得できませんでした。");
+                fileId = createRequest.ResponseBody?.Id;
             }
 
             if (result.Status != Google.Apis.Upload.UploadStatus.Completed)
@@ -235,6 +235,14 @@ public class GoogleDriveService : ICloudStorageService, IDisposable
                 throw new Exception($"アップロードに失敗しました: {result.Exception?.Message}");
             }
 
+            if (string.IsNullOrEmpty(fileId))
+            {
+                fileId = await FindFileByNameAsync(driveService, parentId, remoteName, cancellationToken);
+            }
+
+            if (string.IsNullOrEmpty(fileId))
+                throw new Exception("アップロード後のファイルIDを取得できませんでした。");
+
             return fileId;
         }, cancellationToken: cancellationToken);
     }
@@ -242,7 +250,7 @@ public class GoogleDriveService : ICloudStorageService, IDisposable
     private static async Task<string?> FindFileByNameAsync(DriveService driveService, string? parentId,
         string fileName, CancellationToken cancellationToken)
     {
-        if (parentId == null) return null;
+        if (string.IsNullOrEmpty(parentId)) return null;
 
         var listRequest = driveService.Files.List();
         listRequest.Q = $"name = '{EscapeQueryValue(fileName)}' and '{EscapeQueryValue(parentId)}' in parents and trashed = false";
@@ -257,7 +265,7 @@ public class GoogleDriveService : ICloudStorageService, IDisposable
     {
         var driveService = EnsureAuthenticated();
 
-        var parent = parentId ?? _appFolderId;
+        var parent = string.IsNullOrEmpty(parentId) ? _appFolderId : parentId;
 
         return await RetryHelper.ExecuteWithRetryAsync(async () =>
         {
@@ -322,7 +330,7 @@ public class GoogleDriveService : ICloudStorageService, IDisposable
             Directory.CreateDirectory(directory);
         }
 
-        var tempPath = localPath + ".tmp";
+        var tempPath = $"{localPath}.{Guid.NewGuid():N}.tmp";
 
         try
         {
@@ -378,7 +386,7 @@ public class GoogleDriveService : ICloudStorageService, IDisposable
     {
         var driveService = EnsureAuthenticated();
 
-        var targetFolderId = folderId ?? _appFolderId;
+        var targetFolderId = string.IsNullOrEmpty(folderId) ? _appFolderId : folderId;
         var files = new List<CloudFile>();
         string? pageToken = null;
 
@@ -391,7 +399,7 @@ public class GoogleDriveService : ICloudStorageService, IDisposable
             var result = await RetryHelper.ExecuteWithRetryAsync(async () =>
             {
                 var request = driveService.Files.List();
-                request.Q = targetFolderId != null
+                request.Q = !string.IsNullOrEmpty(targetFolderId)
                     ? $"'{EscapeQueryValue(targetFolderId)}' in parents and trashed = false"
                     : "trashed = false";
                 request.Fields = "nextPageToken, files(id, name, mimeType, size, modifiedTime, parents)";
@@ -433,7 +441,7 @@ public class GoogleDriveService : ICloudStorageService, IDisposable
     private DriveService EnsureAuthenticated()
     {
         return _driveService
-               ?? throw new InvalidOperationException("認証されていません。");
+               ?? throw new CloudNotAuthenticatedException("Google ドライブに認証されていません。連携タブからサインインしてください。");
     }
 
     private async Task<string?> GetOrCreateAppFolderAsync(DriveService driveService, CancellationToken cancellationToken)
