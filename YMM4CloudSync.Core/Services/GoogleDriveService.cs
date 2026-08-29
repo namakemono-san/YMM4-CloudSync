@@ -3,9 +3,7 @@ using Google.Apis.Auth.OAuth2;
 using Google.Apis.Auth.OAuth2.Responses;
 using Google.Apis.Drive.v3;
 using Google.Apis.Services;
-using Google.Apis.Util.Store;
 using System.IO;
-using YMM4CloudSync.Core.Commons;
 using YMM4CloudSync.Core.Commons.Network;
 using YMM4CloudSync.Core.Commons.Security;
 using YMM4CloudSync.Core.Commons.Utilities;
@@ -23,9 +21,9 @@ public class GoogleDriveService : ICloudStorageService, IDisposable
     private const string ApplicationName = "YMM4 Cloud Sync";
     private const string FolderName = "YMM4CloudSync";
 
-    private const string CredentialUser = "user-drive";
+    private const string CredentialUser = "user";
 
-    private static readonly string[] Scopes = [DriveService.Scope.Drive];
+    private static readonly string[] Scopes = [DriveService.Scope.DriveFile];
     private static readonly string CredentialPath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "YMM4CloudSync", "google_credentials");
