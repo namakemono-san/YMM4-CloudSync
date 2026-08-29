@@ -61,6 +61,12 @@ public static class SentryReporter
             return SentryId.Empty;
         }
 
+        if (!SentryFilter.ShouldReport(exception))
+        {
+            Debug.WriteLine($"[YMM4CS][Sentry] Filtered out: {exception.GetType().Name}");
+            return SentryId.Empty;
+        }
+
         try
         {
             return client.CaptureException(exception);
@@ -113,8 +119,14 @@ public static class SentryReporter
         }
     }
 
-    internal static SentryEvent Scrub(SentryEvent sentryEvent)
+    internal static SentryEvent? Scrub(SentryEvent sentryEvent)
     {
+        if (!IsOwnEvent(sentryEvent))
+        {
+            Debug.WriteLine("[YMM4CS][Sentry] Dropped event without plugin frames.");
+            return null;
+        }
+
         try
         {
             if (sentryEvent.Message != null)
@@ -151,6 +163,27 @@ public static class SentryReporter
         }
 
         return sentryEvent;
+    }
+
+    internal static bool IsOwnEvent(SentryEvent sentryEvent)
+    {
+        try
+        {
+            if (sentryEvent.SentryExceptions == null) return true;
+
+            var modules = sentryEvent.SentryExceptions
+                .Where(e => e.Stacktrace?.Frames != null)
+                .SelectMany(e => e.Stacktrace!.Frames)
+                .SelectMany(frame => new[] { frame.Module, frame.Package, frame.AbsolutePath })
+                .ToList();
+
+            return modules.Count == 0 || SentryFilter.HasOwnFrames(modules);
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[YMM4CS][Sentry] Ownership check failed: {ex.Message}");
+            return true;
+        }
     }
 
     internal static string? Redact(string? text)
