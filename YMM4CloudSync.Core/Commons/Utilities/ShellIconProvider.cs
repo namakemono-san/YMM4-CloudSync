@@ -111,11 +111,14 @@ public static class ShellIconProvider
             try
             {
                 icon = ShellIcon.GetIcon(request.Probe, request.Size, request.IsFolder);
-                icon?.Freeze();
+
+                if (icon is { CanFreeze: true }) icon.Freeze();
+                else icon = null;
             }
             catch (Exception ex)
             {
                 Debug.WriteLine($"[AssetTab] Shell icon lookup failed for {request.Key}: {ex.Message}");
+                icon = null;
             }
 
             Cache[request.Key] = icon;

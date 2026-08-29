@@ -352,6 +352,8 @@ public sealed class AssetTabViewModel : INotifyPropertyChanged, IDisposable
         _stack.Clear();
         Breadcrumbs.Clear();
         Items.Clear();
+        _history.Clear();
+        _historyIndex = -1;
         IsCreatingFolder = false;
     }
 
@@ -634,6 +636,8 @@ public sealed class AssetTabViewModel : INotifyPropertyChanged, IDisposable
         if (string.IsNullOrEmpty(item.LocalPath)) return;
         if (!_activeDownloads.TryAdd(item.Id, item)) return;
 
+        var parentId = CurrentFolderId;
+
         var cts = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
         item.DownloadCts = cts;
 
@@ -661,7 +665,7 @@ public sealed class AssetTabViewModel : INotifyPropertyChanged, IDisposable
                     RemoteModifiedTime = item.File.ModifiedTime,
                     RemoteSize = item.File.Size,
                     LocalPath = item.LocalPath,
-                    RemoteParentId = CurrentFolderId
+                    RemoteParentId = parentId
                 });
 
                 PostToUi(() =>
@@ -727,6 +731,17 @@ public sealed class AssetTabViewModel : INotifyPropertyChanged, IDisposable
         if (item == null || item.IsFolder) return;
 
         if (!item.HasLocalFile || item.State == AssetState.Stale) await DownloadAsync(item);
+
+        if (!item.HasLocalFile)
+        {
+            if (item.State == AssetState.Failed)
+            {
+                _dialogs.ShowWarning(
+                    item.ErrorMessage ?? "ダウンロードに失敗したため、フォルダーを開けませんでした。", "確認");
+            }
+
+            return;
+        }
 
         OpenContainingFolder(item);
     }
