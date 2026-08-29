@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using YMM4CloudSync.Core.Commons.Security;
 using YMM4CloudSync.Core.Models;
 
@@ -15,7 +16,7 @@ public static class WebDavConnectionStore
 
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
-        Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() }
+        Converters = { new JsonStringEnumConverter() }
     };
 
     public static string CredentialPath => Path.Combine(

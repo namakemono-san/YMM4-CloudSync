@@ -1,12 +1,14 @@
 ﻿using System.Diagnostics;
+using System.IO;
 using Google.Apis.Auth.OAuth2;
 using Google.Apis.Auth.OAuth2.Responses;
 using Google.Apis.Drive.v3;
 using Google.Apis.Services;
-using System.IO;
+using Google.Apis.Upload;
 using YMM4CloudSync.Core.Commons.Network;
 using YMM4CloudSync.Core.Commons.Security;
 using YMM4CloudSync.Core.Commons.Utilities;
+using File = Google.Apis.Drive.v3.Data.File;
 
 namespace YMM4CloudSync.Core.Services;
 
@@ -171,7 +173,7 @@ public class GoogleDriveService : ICloudStorageService, IDisposable
     {
         var driveService = EnsureAuthenticated();
 
-        if (!File.Exists(localPath))
+        if (!System.IO.File.Exists(localPath))
             throw new FileNotFoundException("アップロードするファイルが見つかりません。", localPath);
 
         var parentId = string.IsNullOrEmpty(parentFolderId) ? _appFolderId : parentFolderId;
@@ -185,12 +187,12 @@ public class GoogleDriveService : ICloudStorageService, IDisposable
             await using var stream = new FileStream(localPath, FileMode.Open, FileAccess.Read);
             var totalSize = stream.Length;
 
-            Google.Apis.Upload.IUploadProgress result;
+            IUploadProgress result;
             string? fileId;
 
             if (existingFileId != null)
             {
-                var updateMetadata = new Google.Apis.Drive.v3.Data.File { Name = remoteName };
+                var updateMetadata = new File { Name = remoteName };
                 var updateRequest = driveService.Files.Update(updateMetadata, existingFileId, stream,
                     "application/octet-stream");
                 updateRequest.Fields = "id, name, size, modifiedTime";
@@ -206,7 +208,7 @@ public class GoogleDriveService : ICloudStorageService, IDisposable
             }
             else
             {
-                var fileMetadata = new Google.Apis.Drive.v3.Data.File
+                var fileMetadata = new File
                 {
                     Name = remoteName,
                     Parents = parentId != null ? [parentId] : null
@@ -225,7 +227,7 @@ public class GoogleDriveService : ICloudStorageService, IDisposable
                 fileId = createRequest.ResponseBody?.Id;
             }
 
-            if (result.Status != Google.Apis.Upload.UploadStatus.Completed)
+            if (result.Status != UploadStatus.Completed)
             {
                 if (result.Exception is OperationCanceledException) throw result.Exception;
                 cancellationToken.ThrowIfCancellationRequested();
@@ -272,7 +274,7 @@ public class GoogleDriveService : ICloudStorageService, IDisposable
             var existing = await FindFolderByNameAsync(driveService, parent, name, cancellationToken);
             if (existing != null) return existing;
 
-            var metadata = new Google.Apis.Drive.v3.Data.File
+            var metadata = new File
             {
                 Name = name,
                 MimeType = CloudMimeTypes.GoogleFolder,
@@ -304,7 +306,7 @@ public class GoogleDriveService : ICloudStorageService, IDisposable
         return folder == null ? null : ToCloudFile(folder, parentId);
     }
 
-    private static CloudFile ToCloudFile(Google.Apis.Drive.v3.Data.File file, string? fallbackParentId) => new(
+    private static CloudFile ToCloudFile(File file, string? fallbackParentId) => new(
         file.Id,
         file.Name,
         file.MimeType,
@@ -356,7 +358,7 @@ public class GoogleDriveService : ICloudStorageService, IDisposable
                 await request.DownloadAsync(stream, cancellationToken);
             }, cancellationToken: cancellationToken);
 
-            File.Move(tempPath, localPath, overwrite: true);
+            System.IO.File.Move(tempPath, localPath, overwrite: true);
         }
         catch
         {
@@ -367,11 +369,11 @@ public class GoogleDriveService : ICloudStorageService, IDisposable
 
     private static void DeleteTempFileQuietly(string tempPath)
     {
-        if (!File.Exists(tempPath)) return;
+        if (!System.IO.File.Exists(tempPath)) return;
 
         try
         {
-            File.Delete(tempPath);
+            System.IO.File.Delete(tempPath);
         }
         catch (Exception ex)
         {
@@ -455,7 +457,7 @@ public class GoogleDriveService : ICloudStorageService, IDisposable
             return result.Files[0].Id;
         }
 
-        var folderMetadata = new Google.Apis.Drive.v3.Data.File
+        var folderMetadata = new File
         {
             Name = FolderName,
             MimeType = "application/vnd.google-apps.folder"

@@ -3,6 +3,7 @@ using System.IO;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
+using System.Net.Security;
 using System.Security.Authentication;
 using System.Security.Cryptography;
 using System.Text;
@@ -71,7 +72,7 @@ public sealed class WebDavClient : IDisposable
         {
             handler.ServerCertificateCustomValidationCallback = (_, _, _, errors) =>
             {
-                if (errors != System.Net.Security.SslPolicyErrors.None)
+                if (errors != SslPolicyErrors.None)
                     Debug.WriteLine($"[WebDAV] Ignoring certificate error: {errors}");
 
                 return true;

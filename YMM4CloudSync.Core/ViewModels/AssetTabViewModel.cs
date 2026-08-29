@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Net.Http;
 using System.Runtime.CompilerServices;
+using System.Windows;
 using System.Windows.Data;
 using YMM4CloudSync.Core.Commons.Configuration;
 using YMM4CloudSync.Core.Commons.Utilities;
@@ -588,7 +589,7 @@ public sealed class AssetTabViewModel : INotifyPropertyChanged, IDisposable
             "確認");
     }
 
-    public System.Windows.IInputElement? TimelineCommandSource { get; set; }
+    public IInputElement? TimelineCommandSource { get; set; }
 
     private bool _timelinePlacementReported;
 

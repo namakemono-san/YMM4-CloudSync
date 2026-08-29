@@ -1,4 +1,5 @@
 ﻿using System.IO;
+using System.Text;
 using System.Text.Json;
 using Google.Apis.Util.Store;
 
@@ -43,7 +44,7 @@ public class EncryptedFileDataStore : IDataStore
 
         try
         {
-            var json = System.Text.Encoding.UTF8.GetString(data);
+            var json = Encoding.UTF8.GetString(data);
             var result = JsonSerializer.Deserialize<T>(json);
             return Task.FromResult(result);
         }
@@ -57,7 +58,7 @@ public class EncryptedFileDataStore : IDataStore
     {
         var filePath = Path.Combine(_folderPath, key);
         var json = JsonSerializer.Serialize(value);
-        var data = System.Text.Encoding.UTF8.GetBytes(json);
+        var data = Encoding.UTF8.GetBytes(json);
 
         SecureStorageHelper.Save(filePath, data);
         return Task.CompletedTask;

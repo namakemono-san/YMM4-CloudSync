@@ -1,5 +1,6 @@
 ﻿using System.Collections.ObjectModel;
 using System.IO;
+using System.Reactive.Disposables;
 using System.Reactive.Linq;
 using System.Reflection;
 using System.Windows.Forms;
@@ -16,7 +17,7 @@ namespace YMM4CloudSync.Core.ViewModels;
 
 public class ToolViewModel : IDisposable
 {
-    private readonly System.Reactive.Disposables.CompositeDisposable _disposables = new();
+    private readonly CompositeDisposable _disposables = new();
 
     public UserSettings Settings { get; }
     

@@ -1,5 +1,6 @@
 using System.Windows.Controls;
 using Xunit;
+using Xunit.Sdk;
 using YMM4CloudSync.Core.Views.Tabs;
 
 namespace YMM4CloudSync.Tests;
@@ -26,7 +27,7 @@ public class TabXamlTests
         thread.Start();
         thread.Join();
 
-        if (failure != null) throw new Xunit.Sdk.XunitException(failure.ToString());
+        if (failure != null) throw new XunitException(failure.ToString());
     }
 
     private static void AssertLoads<T>() where T : UserControl, new()

@@ -1,11 +1,11 @@
 ﻿using System.Diagnostics;
 using System.IO;
+using System.Net;
 using System.Net.Http;
-using Microsoft.Identity.Client;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
-using YMM4CloudSync.Core.Commons;
+using Microsoft.Identity.Client;
 using YMM4CloudSync.Core.Commons.Network;
 using YMM4CloudSync.Core.Commons.Security;
 using YMM4CloudSync.Core.Commons.Utilities;
@@ -142,7 +142,7 @@ public sealed class OneDriveService : ICloudStorageService, IDisposable
                 using var resp = await SendAsync(HttpMethod.Get, pageUrl, null,
                     cancellationToken: cancellationToken);
 
-                if (allowMissing && resp.StatusCode == System.Net.HttpStatusCode.NotFound)
+                if (allowMissing && resp.StatusCode == HttpStatusCode.NotFound)
                 {
                     return (Items: new List<CloudFile>(), NextLink: (string?)null);
                 }
@@ -276,7 +276,7 @@ public sealed class OneDriveService : ICloudStorageService, IDisposable
                     req.Content = content;
                     using var resp = await SharedHttpClient.SendAsync(req, cancellationToken);
 
-                    if (!resp.IsSuccessStatusCode && resp.StatusCode != System.Net.HttpStatusCode.Accepted)
+                    if (!resp.IsSuccessStatusCode && resp.StatusCode != HttpStatusCode.Accepted)
                     {
                         await EnsureSuccessOrThrowAsync(resp);
                     }
@@ -425,7 +425,7 @@ public sealed class OneDriveService : ICloudStorageService, IDisposable
             using var resp = await SendAsync(HttpMethod.Post, url, content,
                 cancellationToken: cancellationToken);
 
-            if (resp.StatusCode == System.Net.HttpStatusCode.Conflict)
+            if (resp.StatusCode == HttpStatusCode.Conflict)
             {
                 var existing = await ListFilesAsync(parent, cancellationToken);
 

@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using System.IO;
 using System.Windows;
 using System.Windows.Threading;
 using Microsoft.Win32;
@@ -123,11 +125,11 @@ public sealed class ProjectDialogService : IProjectDialogService
     {
         try
         {
-            var folder = System.IO.Path.GetDirectoryName(filePath);
+            var folder = Path.GetDirectoryName(filePath);
 
-            if (string.IsNullOrEmpty(folder) || !System.IO.Directory.Exists(folder)) return;
+            if (string.IsNullOrEmpty(folder) || !Directory.Exists(folder)) return;
 
-            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            Process.Start(new ProcessStartInfo
             {
                 FileName = folder,
                 UseShellExecute = true
@@ -135,7 +137,7 @@ public sealed class ProjectDialogService : IProjectDialogService
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"[ProjectTab] Failed to open folder: {ex.Message}");
+            Debug.WriteLine($"[ProjectTab] Failed to open folder: {ex.Message}");
         }
     }
 

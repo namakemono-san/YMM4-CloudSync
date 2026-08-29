@@ -1,4 +1,6 @@
+using System.Collections;
 using System.ComponentModel;
+using System.IO;
 using System.Runtime.CompilerServices;
 using System.Windows.Media;
 using YMM4CloudSync.Core.Commons.Utilities;
@@ -33,7 +35,7 @@ public sealed class AssetItemViewModel : INotifyPropertyChanged
 
     public string SizeText => IsFolder ? "" : FormatSize(File.Size);
 
-    public string Extension => IsFolder ? "" : System.IO.Path.GetExtension(File.Name).TrimStart('.').ToUpperInvariant();
+    public string Extension => IsFolder ? "" : Path.GetExtension(File.Name).TrimStart('.').ToUpperInvariant();
 
     public string TypeText => Category switch
     {
@@ -224,7 +226,7 @@ public enum AssetSortKey
     State
 }
 
-public sealed class AssetItemComparer(AssetSortKey key, bool descending) : System.Collections.IComparer
+public sealed class AssetItemComparer(AssetSortKey key, bool descending) : IComparer
 {
     public int Compare(object? x, object? y)
     {

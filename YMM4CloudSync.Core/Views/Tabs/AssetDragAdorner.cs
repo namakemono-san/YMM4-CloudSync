@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Media;
+using System.Windows.Media.Effects;
 
 namespace YMM4CloudSync.Core.Views.Tabs;
 
@@ -80,7 +81,7 @@ internal sealed class AssetDragAdorner : Adorner
             }
         };
 
-        border.Effect = new System.Windows.Media.Effects.DropShadowEffect
+        border.Effect = new DropShadowEffect
         {
             BlurRadius = 6,
             ShadowDepth = 2,
