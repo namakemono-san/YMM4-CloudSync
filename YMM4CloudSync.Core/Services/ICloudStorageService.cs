@@ -58,7 +58,12 @@ public interface ICloudStorageService
 
     Task<string> UploadFileToFolderAsync(string localPath, string? parentFolderId, string fileName,
         IProgress<double>? progress = null, CancellationToken cancellationToken = default);
+
+    Task<AssetRootListing?> TryOpenAssetRootAsync(string name, CancellationToken cancellationToken = default)
+        => Task.FromResult<AssetRootListing?>(null);
 }
+
+public sealed record AssetRootListing(string FolderId, List<CloudFile> Files);
 
 /// <summary>
 /// Represents metadata for a file in cloud storage.

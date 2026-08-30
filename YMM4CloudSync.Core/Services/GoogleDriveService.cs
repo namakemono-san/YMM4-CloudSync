@@ -390,41 +390,49 @@ public class GoogleDriveService : ICloudStorageService, IDisposable
         var files = new List<CloudFile>();
         string? pageToken = null;
 
-        do
+        try
         {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            var currentPageToken = pageToken;
-
-            var result = await RetryHelper.ExecuteWithRetryAsync(async () =>
+            do
             {
-                var request = driveService.Files.List();
-                request.Q = !string.IsNullOrEmpty(targetFolderId)
-                    ? $"'{EscapeQueryValue(targetFolderId)}' in parents and trashed = false"
-                    : "trashed = false";
-                request.Fields = "nextPageToken, files(id, name, mimeType, size, modifiedTime, parents)";
-                request.OrderBy = "modifiedTime desc";
-                request.PageSize = 100;
+                cancellationToken.ThrowIfCancellationRequested();
 
-                if (currentPageToken != null)
-                    request.PageToken = currentPageToken;
+                var currentPageToken = pageToken;
 
-                return await request.ExecuteAsync(cancellationToken);
-            }, cancellationToken: cancellationToken);
+                var result = await RetryHelper.ExecuteWithRetryAsync(async () =>
+                {
+                    var request = driveService.Files.List();
+                    request.Q = !string.IsNullOrEmpty(targetFolderId)
+                        ? $"'{EscapeQueryValue(targetFolderId)}' in parents and trashed = false"
+                        : "trashed = false";
+                    request.Fields = "nextPageToken, files(id, name, mimeType, size, modifiedTime, parents)";
+                    request.OrderBy = "modifiedTime desc";
+                    request.PageSize = 100;
 
-            if (result.Files != null)
-            {
-                files.AddRange(result.Files.Select(file => new CloudFile(
-                    file.Id,
-                    file.Name,
-                    file.MimeType,
-                    file.Size,
-                    file.ModifiedTimeDateTimeOffset?.DateTime,
-                    file.Parents?.FirstOrDefault() ?? targetFolderId)));
-            }
+                    if (currentPageToken != null)
+                        request.PageToken = currentPageToken;
 
-            pageToken = result.NextPageToken;
-        } while (!string.IsNullOrEmpty(pageToken));
+                    return await request.ExecuteAsync(cancellationToken);
+                }, cancellationToken: cancellationToken);
+
+                if (result.Files != null)
+                {
+                    files.AddRange(result.Files.Select(file => new CloudFile(
+                        file.Id,
+                        file.Name,
+                        file.MimeType,
+                        file.Size,
+                        file.ModifiedTimeDateTimeOffset?.DateTime,
+                        file.Parents?.FirstOrDefault() ?? targetFolderId)));
+                }
+
+                pageToken = result.NextPageToken;
+            } while (!string.IsNullOrEmpty(pageToken));
+        }
+        catch (Exception ex) when (CloudErrors.IsNotFound(ex))
+        {
+            Debug.WriteLine($"[GoogleDrive] Folder is gone: {targetFolderId}");
+            return files;
+        }
 
         return files;
     }

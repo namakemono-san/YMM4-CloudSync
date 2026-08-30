@@ -4,6 +4,10 @@ public static class CloudAssetRoot
 {
     public const string FolderName = "Assets";
 
+    public static Task<AssetRootListing?> TryOpenAsync(ICloudStorageService service,
+        CancellationToken cancellationToken = default)
+        => service.TryOpenAssetRootAsync(FolderName, cancellationToken);
+
     public static async Task<string> EnsureAsync(ICloudStorageService service,
         CancellationToken cancellationToken = default)
     {

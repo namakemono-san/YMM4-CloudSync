@@ -27,6 +27,8 @@ public sealed class AssetTabViewModel : INotifyPropertyChanged, IDisposable
     private readonly SemaphoreSlim _downloadSlots = new(MaxConcurrentDownloads, MaxConcurrentDownloads);
     private readonly ConcurrentDictionary<string, AssetItemViewModel> _activeDownloads = new(StringComparer.Ordinal);
     private readonly List<BreadcrumbNode> _stack = [];
+
+    private string? _loadedFolderId;
     private readonly List<List<BreadcrumbNode>> _history = [];
 
     private int _historyIndex = -1;
@@ -103,6 +105,36 @@ public sealed class AssetTabViewModel : INotifyPropertyChanged, IDisposable
         };
 
         _serviceSubscription = Tool.SelectedCloudService.Subscribe(OnServiceChanged);
+
+        _ = PrefetchAllAsync();
+    }
+
+    private async Task PrefetchAllAsync()
+    {
+        foreach (var item in Tool.CloudServices.ToList())
+        {
+            if (_lifetime.IsCancellationRequested) return;
+
+            var service = item.Service;
+
+            if (!service.IsAuthenticated) continue;
+            if (ReferenceEquals(service, Service)) continue;
+            if (AssetRootCache.Find(service.ConnectionKey) != null) continue;
+
+            try
+            {
+                var listing = await CloudAssetRoot.TryOpenAsync(service, _lifetime.Token);
+
+                if (listing == null) continue;
+
+                AssetRootCache.Save(service.ConnectionKey, listing.FolderId);
+                AssetListingCache.Save(service.ConnectionKey, listing.FolderId, listing.Files);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[AssetTab] Prefetch failed for {service.ConnectionKey}: {ex.Message}");
+            }
+        }
     }
 
     public ToolViewModel Tool { get; }
@@ -355,6 +387,7 @@ public sealed class AssetTabViewModel : INotifyPropertyChanged, IDisposable
         Items.Clear();
         _history.Clear();
         _historyIndex = -1;
+        _loadedFolderId = null;
         IsCreatingFolder = false;
     }
 
@@ -364,18 +397,40 @@ public sealed class AssetTabViewModel : INotifyPropertyChanged, IDisposable
 
         try
         {
-            var rootId = await CloudAssetRoot.EnsureAsync(service, _lifetime.Token);
+            var rootId = AssetRootCache.Find(service.ConnectionKey);
 
-            _stack.Clear();
-            _stack.Add(new BreadcrumbNode(rootId, CloudAssetRoot.FolderName));
+            if (rootId == null)
+            {
+                var listing = await CloudAssetRoot.TryOpenAsync(service, _lifetime.Token);
 
-            _history.Clear();
-            _historyIndex = -1;
+                if (listing != null)
+                {
+                    _ = Task.Run(() =>
+                    {
+                        AssetRootCache.Save(service.ConnectionKey, listing.FolderId);
+                        AssetListingCache.Save(service.ConnectionKey, listing.FolderId, listing.Files);
+                    });
 
-            SyncBreadcrumbs();
-            RecordHistory();
+                    EnterRoot(listing.FolderId);
+
+                    _loadedFolderId = listing.FolderId;
+                    Show(service, listing.Files);
+
+                    return;
+                }
+
+                rootId = await CloudAssetRoot.EnsureAsync(service, _lifetime.Token);
+
+                var resolved = rootId;
+
+                _ = Task.Run(() => AssetRootCache.Save(service.ConnectionKey, resolved));
+            }
+
+            EnterRoot(rootId);
 
             await RefreshAsync();
+
+            if (Items.Count == 0) _ = VerifyRootAsync(service, rootId);
         }
         catch (OperationCanceledException)
         {
@@ -389,6 +444,45 @@ public sealed class AssetTabViewModel : INotifyPropertyChanged, IDisposable
         {
             _dialogs.ReportException(ex);
         }
+    }
+
+    private async Task VerifyRootAsync(ICloudStorageService service, string rootId)
+    {
+        try
+        {
+            var verified = await CloudAssetRoot.EnsureAsync(service, _lifetime.Token);
+
+            if (string.Equals(verified, rootId, StringComparison.Ordinal)) return;
+
+            AssetRootCache.Save(service.ConnectionKey, verified);
+            AssetListingCache.Forget(service.ConnectionKey, rootId);
+
+            PostToUi(() =>
+            {
+                if (!ReferenceEquals(Service, service)) return;
+                if (!string.Equals(CurrentFolderId, rootId, StringComparison.Ordinal)) return;
+
+                EnterRoot(verified);
+
+                _ = RefreshAsync();
+            });
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[AssetTab] Root verification failed: {ex.Message}");
+        }
+    }
+
+    private void EnterRoot(string rootId)
+    {
+        _stack.Clear();
+        _stack.Add(new BreadcrumbNode(rootId, CloudAssetRoot.FolderName));
+
+        _history.Clear();
+        _historyIndex = -1;
+
+        SyncBreadcrumbs();
+        RecordHistory();
     }
 
     private void SyncBreadcrumbs()
@@ -465,6 +559,13 @@ public sealed class AssetTabViewModel : INotifyPropertyChanged, IDisposable
 
         CancelPendingRefresh();
 
+        if (!string.Equals(_loadedFolderId, folderId, StringComparison.Ordinal))
+        {
+            _loadedFolderId = folderId;
+
+            Show(service, AssetListingCache.Find(service.ConnectionKey, folderId) ?? []);
+        }
+
         var refresh = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _lifetime.Token);
         _refresh = refresh;
 
@@ -472,18 +573,13 @@ public sealed class AssetTabViewModel : INotifyPropertyChanged, IDisposable
         {
             var entries = await service.ListFilesAsync(folderId, refresh.Token);
 
-            var assetDirectory = AssetDirectory;
-            var segments = CurrentSegments;
+            if (!ReferenceEquals(_refresh, refresh)) return;
 
-            var built = entries
-                .Select(f => Build(service, assetDirectory, segments, f))
-                .ToList();
+            refresh.Token.ThrowIfCancellationRequested();
 
-            Items.Clear();
+            Show(service, entries);
 
-            foreach (var item in built) Items.Add(item);
-
-            AssetsView.Refresh();
+            _ = Task.Run(() => AssetListingCache.Save(service.ConnectionKey, folderId, entries));
         }
         catch (OperationCanceledException)
         {
@@ -502,6 +598,22 @@ public sealed class AssetTabViewModel : INotifyPropertyChanged, IDisposable
             if (ReferenceEquals(_refresh, refresh)) _refresh = null;
             refresh.Dispose();
         }
+    }
+
+    private void Show(ICloudStorageService service, IReadOnlyList<CloudFile> entries)
+    {
+        var assetDirectory = AssetDirectory;
+        var segments = CurrentSegments;
+
+        var built = entries
+            .Select(f => Build(service, assetDirectory, segments, f))
+            .ToList();
+
+        Items.Clear();
+
+        foreach (var item in built) Items.Add(item);
+
+        AssetsView.Refresh();
     }
 
     private AssetItemViewModel Build(ICloudStorageService service, string assetDirectory,

@@ -39,17 +39,30 @@ public sealed class OneDriveService : ICloudStorageService, IDisposable
     
     // Static HttpClient to avoid socket exhaustion issues
     // See: https://learn.microsoft.com/en-us/dotnet/fundamentals/networking/http/httpclient-guidelines
-    private static readonly HttpClient SharedHttpClient = new();
+    private static readonly HttpClient SharedHttpClient = CreateHttpClient();
+
+    private static HttpClient CreateHttpClient()
+    {
+        var handler = new SocketsHttpHandler
+        {
+            AutomaticDecompression = DecompressionMethods.All,
+            PooledConnectionLifetime = TimeSpan.FromMinutes(10)
+        };
+
+        return new HttpClient(handler);
+    }
     
     private IPublicClientApplication? _pca;
     private IAccount? _account;
     private bool _disposed;
+    private string? _appRootId;
 
     public void Dispose()
     {
         if (_disposed) return;
 
         _account = null;
+        _appRootId = null;
         _pca = null;
         _disposed = true;
     }
@@ -71,6 +84,7 @@ public sealed class OneDriveService : ICloudStorageService, IDisposable
         catch
         {
             _account = null;
+            _appRootId = null;
             return false;
         }
     }
@@ -91,12 +105,14 @@ public sealed class OneDriveService : ICloudStorageService, IDisposable
         catch (OperationCanceledException)
         {
             _account = null;
+            _appRootId = null;
             return false;
         }
         catch (Exception ex)
         {
             ErrorReporter.ReportAndShowDialog(ex);
             _account = null;
+            _appRootId = null;
             return false;
         }
     }
@@ -111,6 +127,7 @@ public sealed class OneDriveService : ICloudStorageService, IDisposable
         }
 
         _account = null;
+        _appRootId = null;
 
         SecureStorageHelper.Delete(TokenCachePath);
     }
@@ -120,9 +137,11 @@ public sealed class OneDriveService : ICloudStorageService, IDisposable
     {
         EnsureAuthenticated();
 
-        var url = folderId is null
+        var target = folderId ?? _appRootId;
+
+        var url = target is null
             ? $"{GraphBase}/me/drive/special/approot/children?$orderby=lastModifiedDateTime desc"
-            : $"{GraphBase}/me/drive/items/{folderId}/children?$orderby=lastModifiedDateTime desc";
+            : $"{GraphBase}/me/drive/items/{Uri.EscapeDataString(target)}/children?$orderby=lastModifiedDateTime desc";
 
         var list = new List<CloudFile>();
 
@@ -164,7 +183,10 @@ public sealed class OneDriveService : ICloudStorageService, IDisposable
                     var parentId = item.TryGetProperty("parentReference", out var parentRef)
                                    && parentRef.TryGetProperty("id", out var parentIdValue)
                         ? parentIdValue.GetString()
-                        : folderId;
+                        : target;
+
+                    if (folderId is null && _appRootId is null && !string.IsNullOrEmpty(parentId))
+                        _appRootId = parentId;
 
                     items.Add(new CloudFile(
                         id,
@@ -187,6 +209,67 @@ public sealed class OneDriveService : ICloudStorageService, IDisposable
         }
 
         return list;
+    }
+
+    public async Task<AssetRootListing?> TryOpenAssetRootAsync(string name,
+        CancellationToken cancellationToken = default)
+    {
+        EnsureAuthenticated();
+
+        var url = $"{GraphBase}/me/drive/special/approot:/{EscapePath(name)}?$expand=children";
+
+        using var resp = await SendAsync(HttpMethod.Get, url, null, cancellationToken: cancellationToken);
+
+        if (!resp.IsSuccessStatusCode) return null;
+
+        await using var stream = await resp.Content.ReadAsStreamAsync(cancellationToken);
+        using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+
+        var root = doc.RootElement;
+
+        if (!root.TryGetProperty("id", out var idValue)) return null;
+
+        var folderId = idValue.GetString();
+
+        if (string.IsNullOrEmpty(folderId)) return null;
+
+        if (root.TryGetProperty("parentReference", out var parentRef)
+            && parentRef.TryGetProperty("id", out var appRoot)
+            && appRoot.GetString() is { Length: > 0 } appRootId)
+        {
+            _appRootId = appRootId;
+        }
+
+        var files = new List<CloudFile>();
+
+        if (root.TryGetProperty("children", out var children))
+        {
+            files.AddRange(children.EnumerateArray().Select(item => ToCloudFile(item, folderId)));
+        }
+
+        if (root.TryGetProperty("children@odata.nextLink", out _))
+        {
+            return new AssetRootListing(folderId, await ListFilesAsync(folderId, cancellationToken));
+        }
+
+        return new AssetRootListing(folderId, [.. files
+            .OrderByDescending(f => f.ModifiedTime ?? DateTime.MinValue)]);
+    }
+
+    private static CloudFile ToCloudFile(JsonElement item, string? fallbackParentId)
+    {
+        var parentId = item.TryGetProperty("parentReference", out var parentRef)
+                       && parentRef.TryGetProperty("id", out var parentIdValue)
+            ? parentIdValue.GetString()
+            : fallbackParentId;
+
+        return new CloudFile(
+            item.GetProperty("id").GetString() ?? "",
+            item.GetProperty("name").GetString() ?? "",
+            item.TryGetProperty("folder", out _) ? CloudMimeTypes.OneDriveFolder : "application/octet-stream",
+            item.TryGetProperty("size", out var size) ? size.GetInt64() : null,
+            item.TryGetProperty("lastModifiedDateTime", out var modified) ? modified.GetDateTime() : null,
+            parentId);
     }
 
     public Task<string> UploadFileToFolderAsync(string localPath, string? parentFolderId, string fileName,
@@ -465,6 +548,8 @@ public sealed class OneDriveService : ICloudStorageService, IDisposable
 
     private async Task<string?> TryGetAppRootIdAsync(CancellationToken cancellationToken)
     {
+        if (_appRootId != null) return _appRootId;
+
         using var resp = await SendAsync(HttpMethod.Get, $"{GraphBase}/me/drive/special/approot", null,
             cancellationToken: cancellationToken);
 
@@ -473,7 +558,9 @@ public sealed class OneDriveService : ICloudStorageService, IDisposable
         await using var s = await resp.Content.ReadAsStreamAsync(cancellationToken);
         using var doc = await JsonDocument.ParseAsync(s, cancellationToken: cancellationToken);
 
-        return doc.RootElement.TryGetProperty("id", out var id) ? id.GetString() : null;
+        _appRootId = doc.RootElement.TryGetProperty("id", out var id) ? id.GetString() : null;
+
+        return _appRootId;
     }
 
     private async Task MaterializeAppRootAsync(CancellationToken cancellationToken)

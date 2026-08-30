@@ -47,7 +47,11 @@ public sealed class WebDavClient : IDisposable
         _chunkedUploadEnabled = settings.EnableChunkedUpload;
         UploadsRoot = _chunkedUploadEnabled ? WebDavChunkEndpoint.TryResolveUploadsRoot(BaseUri) : null;
 
-        var handler = new HttpClientHandler { AllowAutoRedirect = true };
+        var handler = new HttpClientHandler
+        {
+            AllowAutoRedirect = true,
+            AutomaticDecompression = DecompressionMethods.All
+        };
 
         if (settings.AuthMode == WebDavAuthMode.Basic)
         {
