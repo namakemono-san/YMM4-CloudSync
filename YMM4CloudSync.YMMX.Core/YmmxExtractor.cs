@@ -542,6 +542,8 @@ public static class YmmxExtractor
                     obj["FilePath"] = ResolveAssetPath(relativePath, baseDirectory, externalReferences);
                 }
 
+                RewriteDirectoryReferences(obj, baseDirectory, externalReferences);
+
                 foreach (var prop in obj)
                 {
                     if (prop.Value != null)
@@ -561,6 +563,29 @@ public static class YmmxExtractor
                 break;
             }
         }
+    }
+
+    private static void RewriteDirectoryReferences(
+        JsonObject obj, string baseDirectory, List<string> externalReferences)
+    {
+        List<KeyValuePair<string, string>>? rewrites = null;
+
+        foreach (var prop in obj)
+        {
+            if (prop.Key == "FilePath") continue;
+            if (prop.Value is not JsonValue value) continue;
+            if (!value.TryGetValue<string>(out var declared)) continue;
+            if (string.IsNullOrEmpty(declared)) continue;
+            if (!declared.StartsWith($"assets/{YmmxPacker.DirectoryAssetFolder}/", StringComparison.Ordinal)) continue;
+
+            rewrites ??= [];
+            rewrites.Add(new KeyValuePair<string, string>(
+                prop.Key, ResolveAssetPath(declared, baseDirectory, externalReferences)));
+        }
+
+        if (rewrites == null) return;
+
+        foreach (var (key, resolved) in rewrites) obj[key] = resolved;
     }
 
     private static string ResolveAssetPath(string declaredPath, string baseDirectory, List<string> externalReferences)

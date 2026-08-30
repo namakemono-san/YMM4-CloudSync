@@ -34,6 +34,12 @@ public static class YmmxPacker
         { "YukkuriMovieMaker.Project.Items.AudioItem", "audio" },
     };
 
+    internal const string DirectoryAssetFolder = "tachie";
+
+    internal const long MaxDirectoryBytes = 512L * 1024 * 1024;
+
+    internal const int MaxDirectoryFiles = 20000;
+
     public static PackResult Pack(string ymmpPath, string outputYmmxPath, string projectName,
         IProgress<double>? progress = null, CancellationToken cancellationToken = default)
     {
@@ -60,11 +66,14 @@ public static class YmmxPacker
 
             var filePaths = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             var usedFileNames = new Dictionary<string, HashSet<string>>();
-            
-            CollectAndRewritePaths(json, assetsDir, filePaths, usedFileNames, missingFiles);
+            var directories = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var usedDirectoryNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            CollectDirectories(json, directories, usedDirectoryNames, missingFiles);
+            CollectAndRewritePaths(json, assetsDir, filePaths, usedFileNames, missingFiles, directories);
 
             var packList = new List<(string Source, string RelativeDest)>();
-            
+
             foreach (var (original, newPath) in filePaths)
             {
                 if (!File.Exists(original))
@@ -75,6 +84,18 @@ public static class YmmxPacker
 
                 var relativeDest = Path.GetRelativePath(virtualRoot, newPath).Replace('\\', '/');
                 packList.Add((original, relativeDest));
+            }
+
+            foreach (var (source, destName) in directories)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                foreach (var file in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
+                {
+                    var remainder = Path.GetRelativePath(source, file).Replace('\\', '/');
+
+                    packList.Add((file, $"assets/{DirectoryAssetFolder}/{destName}/{remainder}"));
+                }
             }
 
             var ymmpOutputPath = Path.Combine(tempMetaDir, "project.ymmp");
@@ -134,12 +155,167 @@ public static class YmmxPacker
         }
     }
 
+    internal static void CollectDirectories(
+        JsonNode node,
+        Dictionary<string, string> directories,
+        HashSet<string> usedNames,
+        List<string> oversizedDirectories)
+    {
+        switch (node)
+        {
+            case JsonObject obj:
+            {
+                if (IsTachieParameter(obj))
+                {
+                    foreach (var prop in obj)
+                    {
+                        if (prop.Key != "Directory") continue;
+                        if (prop.Value is not JsonValue value) continue;
+                        if (!value.TryGetValue<string>(out var declared)) continue;
+
+                        RegisterDirectory(declared, directories, usedNames, oversizedDirectories);
+                    }
+                }
+
+                foreach (var prop in obj)
+                {
+                    if (prop.Value != null)
+                        CollectDirectories(prop.Value, directories, usedNames, oversizedDirectories);
+                }
+
+                break;
+            }
+            case JsonArray arr:
+            {
+                foreach (var item in arr)
+                {
+                    if (item != null)
+                        CollectDirectories(item, directories, usedNames, oversizedDirectories);
+                }
+
+                break;
+            }
+        }
+    }
+
+    private static bool IsTachieParameter(JsonObject obj)
+    {
+        if (!obj.TryGetPropertyValue("$type", out var typeNode)) return false;
+        if (typeNode is not JsonValue typeValue) return false;
+        if (!typeValue.TryGetValue<string>(out var typeName)) return false;
+
+        return typeName.Contains("Tachie", StringComparison.Ordinal);
+    }
+
+    private static void RegisterDirectory(
+        string? declared,
+        Dictionary<string, string> directories,
+        HashSet<string> usedNames,
+        List<string> oversizedDirectories)
+    {
+        if (string.IsNullOrWhiteSpace(declared)) return;
+        if (!Path.IsPathRooted(declared)) return;
+
+        string normalized;
+
+        try
+        {
+            normalized = Path.GetFullPath(declared).TrimEnd(Path.DirectorySeparatorChar);
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[YmmxPacker] Invalid directory reference: {ex.Message}");
+            return;
+        }
+
+        if (directories.ContainsKey(normalized)) return;
+        if (!Directory.Exists(normalized)) return;
+        if (Path.GetPathRoot(normalized)?.TrimEnd(Path.DirectorySeparatorChar) == normalized) return;
+
+        if (!IsWithinLimits(normalized))
+        {
+            if (!oversizedDirectories.Contains(normalized)) oversizedDirectories.Add(normalized);
+            return;
+        }
+
+        var name = PathTagResolver.SanitizeFileName(Path.GetFileName(normalized), "tachie");
+        var unique = name;
+        var counter = 1;
+
+        while (!usedNames.Add(unique))
+        {
+            unique = $"{name}_{counter}";
+            counter++;
+        }
+
+        directories[normalized] = unique;
+    }
+
+    private static bool IsWithinLimits(string directory)
+    {
+        try
+        {
+            long total = 0;
+            var count = 0;
+
+            foreach (var file in Directory.EnumerateFiles(directory, "*", SearchOption.AllDirectories))
+            {
+                count++;
+                if (count > MaxDirectoryFiles) return false;
+
+                total += new FileInfo(file).Length;
+                if (total > MaxDirectoryBytes) return false;
+            }
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[YmmxPacker] Failed to measure {directory}: {ex.Message}");
+            return false;
+        }
+    }
+
+    internal static string? TryRewriteUnderDirectory(string declared, Dictionary<string, string> directories)
+    {
+        if (string.IsNullOrWhiteSpace(declared)) return null;
+        if (!Path.IsPathRooted(declared)) return null;
+
+        string normalized;
+
+        try
+        {
+            normalized = Path.GetFullPath(declared).TrimEnd(Path.DirectorySeparatorChar);
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[YmmxPacker] Invalid path reference: {ex.Message}");
+            return null;
+        }
+
+        foreach (var (source, destName) in directories)
+        {
+            if (string.Equals(normalized, source, StringComparison.OrdinalIgnoreCase))
+                return $"assets/{DirectoryAssetFolder}/{destName}";
+
+            if (!normalized.StartsWith(source + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            var remainder = normalized[(source.Length + 1)..].Replace('\\', '/');
+
+            return $"assets/{DirectoryAssetFolder}/{destName}/{remainder}";
+        }
+
+        return null;
+    }
+
     private static void CollectAndRewritePaths(
-        JsonNode node, 
-        string assetsDir, 
+        JsonNode node,
+        string assetsDir,
         Dictionary<string, string> filePaths,
         Dictionary<string, HashSet<string>> usedFileNames,
         List<string> missingFiles,
+        Dictionary<string, string> directories,
         bool isRoot = true)
     {
         switch (node)
@@ -148,7 +324,9 @@ public static class YmmxPacker
             {
                 obj.Remove("LayoutXml");
                 obj.Remove("ToolStates");
-                
+
+                RewriteDirectoryReferences(obj, directories);
+
                 string? folder = null;
                 if (obj.TryGetPropertyValue("$type", out var typeNode))
                 {
@@ -162,7 +340,7 @@ public static class YmmxPacker
                 if (!isRoot && obj.TryGetPropertyValue("FilePath", out var filePathNode) && filePathNode != null)
                 {
                     var originalPath = filePathNode.GetValue<string>();
-                    if (!string.IsNullOrEmpty(originalPath))
+                    if (!string.IsNullOrEmpty(originalPath) && Path.IsPathRooted(originalPath))
                     {
                         var normalizedPath = Path.GetFullPath(originalPath);
                         
@@ -198,7 +376,8 @@ public static class YmmxPacker
                 {
                     if (prop.Value != null)
                     {
-                        CollectAndRewritePaths(prop.Value, assetsDir, filePaths, usedFileNames, missingFiles, false);
+                        CollectAndRewritePaths(prop.Value, assetsDir, filePaths, usedFileNames, missingFiles,
+                            directories, false);
                     }
                 }
 
@@ -210,13 +389,35 @@ public static class YmmxPacker
                 {
                     if (item != null)
                     {
-                        CollectAndRewritePaths(item, assetsDir, filePaths, usedFileNames, missingFiles, false);
+                        CollectAndRewritePaths(item, assetsDir, filePaths, usedFileNames, missingFiles,
+                            directories, false);
                     }
                 }
 
                 break;
             }
         }
+    }
+
+    private static void RewriteDirectoryReferences(JsonObject obj, Dictionary<string, string> directories)
+    {
+        if (directories.Count == 0) return;
+
+        List<KeyValuePair<string, string>>? rewrites = null;
+
+        foreach (var prop in obj)
+        {
+            if (prop.Value is not JsonValue value) continue;
+            if (!value.TryGetValue<string>(out var declared)) continue;
+            if (TryRewriteUnderDirectory(declared, directories) is not { } rewritten) continue;
+
+            rewrites ??= [];
+            rewrites.Add(new KeyValuePair<string, string>(prop.Key, rewritten));
+        }
+
+        if (rewrites == null) return;
+
+        foreach (var (key, rewritten) in rewrites) obj[key] = rewritten;
     }
 
     private static string GetUniqueFileName(string originalPath, HashSet<string> usedNames)
