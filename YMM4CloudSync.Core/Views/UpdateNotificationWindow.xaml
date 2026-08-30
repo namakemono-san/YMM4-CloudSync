@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-        xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks"
+        xmlns:icons="clr-namespace:YukkuriMovieMaker.Resources.Icons;assembly=YukkuriMovieMaker.Plugin"
         mc:Ignorable="d"
         Title="YMM4 Cloud Sync - 更新" 
         Height="350" Width="500"
@@ -18,7 +18,7 @@
         </Grid.RowDefinitions>
 
         <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,15">
-            <iconPacks:PackIconMaterial Kind="CloudDownload" Width="32" Height="32" Foreground="#0078D7" VerticalAlignment="Center"/>
+            <Path Data="{DynamicResource {x:Static icons:GeometryKeys.CloudDownload}}" Fill="#0078D7" Stretch="Uniform" Width="32" Height="32" VerticalAlignment="Center"/>
             <StackPanel Margin="15,0,0,0" VerticalAlignment="Center">
                 <TextBlock Text="新しいバージョンがあります" FontSize="16" FontWeight="Bold"/>
                 <StackPanel Orientation="Horizontal" Margin="0,5,0,0">

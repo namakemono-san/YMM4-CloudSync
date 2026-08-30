@@ -3,7 +3,6 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-             xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks"
              xmlns:c="clr-namespace:YukkuriMovieMaker.Controls;assembly=YukkuriMovieMaker.Plugin"
              xmlns:icons="clr-namespace:YukkuriMovieMaker.Resources.Icons;assembly=YukkuriMovieMaker.Plugin"
              xmlns:vm="clr-namespace:YMM4CloudSync.Core.ViewModels"
@@ -39,24 +38,26 @@
                 </Grid>
             </DataTemplate>
 
-            <Style x:Key="TypeGlyphStyle" TargetType="iconPacks:PackIconMaterial">
-                <Setter Property="Kind" Value="File"/>
+            <Style x:Key="TypeGlyphStyle" TargetType="Path">
+                <Setter Property="Data" Value="{DynamicResource {x:Static icons:GeometryKeys.File}}"/>
+                <Setter Property="Stretch" Value="Uniform"/>
+                <Setter Property="Fill" Value="{Binding Path=(TextElement.Foreground), RelativeSource={RelativeSource Self}}"/>
                 <Setter Property="Visibility" Value="{Binding Icon, Converter={StaticResource NullToVisibilityConverter}}"/>
                 <Style.Triggers>
                     <DataTrigger Binding="{Binding Category}" Value="Folder">
-                        <Setter Property="Kind" Value="Folder"/>
+                        <Setter Property="Data" Value="{DynamicResource {x:Static icons:GeometryKeys.Folder}}"/>
                     </DataTrigger>
                     <DataTrigger Binding="{Binding Category}" Value="Video">
-                        <Setter Property="Kind" Value="FileVideo"/>
+                        <Setter Property="Data" Value="{DynamicResource {x:Static icons:GeometryKeys.FileVideo}}"/>
                     </DataTrigger>
                     <DataTrigger Binding="{Binding Category}" Value="Image">
-                        <Setter Property="Kind" Value="FileImage"/>
+                        <Setter Property="Data" Value="{DynamicResource {x:Static icons:GeometryKeys.FileImage}}"/>
                     </DataTrigger>
                     <DataTrigger Binding="{Binding Category}" Value="Audio">
-                        <Setter Property="Kind" Value="FileMusic"/>
+                        <Setter Property="Data" Value="{DynamicResource {x:Static icons:GeometryKeys.FileMusic}}"/>
                     </DataTrigger>
                     <DataTrigger Binding="{Binding Category}" Value="Text">
-                        <Setter Property="Kind" Value="FileDocument"/>
+                        <Setter Property="Data" Value="{DynamicResource {x:Static icons:GeometryKeys.FileDocument}}"/>
                     </DataTrigger>
                 </Style.Triggers>
             </Style>
@@ -78,53 +79,53 @@
                         </Style>
                     </Grid.Style>
 
-                    <iconPacks:PackIconMaterial Kind="CloudOutline" Width="11" Height="11" Opacity="0.5">
-                        <iconPacks:PackIconMaterial.Style>
-                            <Style TargetType="iconPacks:PackIconMaterial" BasedOn="{StaticResource StateGlyphStyle}">
+                    <Path Data="{DynamicResource {x:Static icons:GeometryKeys.CloudOutline}}" Fill="{Binding Path=(TextElement.Foreground), RelativeSource={RelativeSource Self}}" Stretch="Uniform" Width="11" Height="11" Opacity="0.5">
+                        <Path.Style>
+                            <Style TargetType="Path" BasedOn="{StaticResource StateGlyphStyle}">
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding State}" Value="NotDownloaded">
                                         <Setter Property="Visibility" Value="Visible"/>
                                     </DataTrigger>
                                 </Style.Triggers>
                             </Style>
-                        </iconPacks:PackIconMaterial.Style>
-                    </iconPacks:PackIconMaterial>
+                        </Path.Style>
+                    </Path>
 
-                    <iconPacks:PackIconMaterial Kind="CheckCircle" Width="11" Height="11" Foreground="SeaGreen">
-                        <iconPacks:PackIconMaterial.Style>
-                            <Style TargetType="iconPacks:PackIconMaterial" BasedOn="{StaticResource StateGlyphStyle}">
+                    <Path Data="{DynamicResource {x:Static icons:GeometryKeys.CheckCircle}}" Fill="SeaGreen" Stretch="Uniform" Width="11" Height="11">
+                        <Path.Style>
+                            <Style TargetType="Path" BasedOn="{StaticResource StateGlyphStyle}">
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding State}" Value="Downloaded">
                                         <Setter Property="Visibility" Value="Visible"/>
                                     </DataTrigger>
                                 </Style.Triggers>
                             </Style>
-                        </iconPacks:PackIconMaterial.Style>
-                    </iconPacks:PackIconMaterial>
+                        </Path.Style>
+                    </Path>
 
-                    <iconPacks:PackIconMaterial Kind="Update" Width="11" Height="11" Foreground="DarkOrange">
-                        <iconPacks:PackIconMaterial.Style>
-                            <Style TargetType="iconPacks:PackIconMaterial" BasedOn="{StaticResource StateGlyphStyle}">
+                    <Path Data="{DynamicResource {x:Static icons:GeometryKeys.Update}}" Fill="DarkOrange" Stretch="Uniform" Width="11" Height="11">
+                        <Path.Style>
+                            <Style TargetType="Path" BasedOn="{StaticResource StateGlyphStyle}">
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding State}" Value="Stale">
                                         <Setter Property="Visibility" Value="Visible"/>
                                     </DataTrigger>
                                 </Style.Triggers>
                             </Style>
-                        </iconPacks:PackIconMaterial.Style>
-                    </iconPacks:PackIconMaterial>
+                        </Path.Style>
+                    </Path>
 
-                    <iconPacks:PackIconMaterial Kind="AlertCircle" Width="11" Height="11" Foreground="OrangeRed">
-                        <iconPacks:PackIconMaterial.Style>
-                            <Style TargetType="iconPacks:PackIconMaterial" BasedOn="{StaticResource StateGlyphStyle}">
+                    <Path Data="{DynamicResource {x:Static icons:GeometryKeys.AlertCircle}}" Fill="OrangeRed" Stretch="Uniform" Width="11" Height="11">
+                        <Path.Style>
+                            <Style TargetType="Path" BasedOn="{StaticResource StateGlyphStyle}">
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding State}" Value="Failed">
                                         <Setter Property="Visibility" Value="Visible"/>
                                     </DataTrigger>
                                 </Style.Triggers>
                             </Style>
-                        </iconPacks:PackIconMaterial.Style>
-                    </iconPacks:PackIconMaterial>
+                        </Path.Style>
+                    </Path>
 
                     <ProgressBar Width="34" Height="5" Minimum="0" Maximum="100" Value="{Binding Progress, Mode=OneWay}">
                         <ProgressBar.Style>
@@ -163,7 +164,7 @@
                           Width="{Binding RelativeSource={RelativeSource Mode=FindAncestor,AncestorType=ListBox},Path=DataContext.Layout.IconSize, FallbackValue=16}"
                           Height="{Binding RelativeSource={RelativeSource Mode=FindAncestor,AncestorType=ListBox},Path=DataContext.Layout.IconSize, FallbackValue=16}">
                         <Image Source="{Binding Icon}" Stretch="Uniform"/>
-                        <iconPacks:PackIconMaterial Style="{StaticResource TypeGlyphStyle}" Width="Auto" Height="Auto"/>
+                        <Path Style="{StaticResource TypeGlyphStyle}" Width="Auto" Height="Auto"/>
                     </Grid>
                     <TextBlock Grid.Column="1" Text="{Binding Name}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
                     <ContentPresenter Grid.Column="2" Margin="6,0,2,0" Content="{Binding}" ContentTemplate="{StaticResource StateBadgeTemplate}"/>
@@ -190,7 +191,7 @@
                     </Grid.RowDefinitions>
                     <Grid Grid.Row="0">
                         <Image Source="{Binding Icon}" Stretch="Uniform"/>
-                        <iconPacks:PackIconMaterial Style="{StaticResource TypeGlyphStyle}" Width="Auto" Height="Auto"/>
+                        <Path Style="{StaticResource TypeGlyphStyle}" Width="Auto" Height="Auto"/>
                         <ContentPresenter Margin="0,1,1,0" HorizontalAlignment="Right" VerticalAlignment="Top"
                                           Content="{Binding}" ContentTemplate="{StaticResource StateBadgeTemplate}"/>
                     </Grid>
@@ -478,7 +479,7 @@
                         </Style.Triggers>
                     </Style>
                 </StackPanel.Style>
-                <iconPacks:PackIconMaterial Kind="CloudOffOutline" Width="48" Height="48" HorizontalAlignment="Center" Foreground="Gray" Margin="0,0,0,10"/>
+                <Path Data="{DynamicResource {x:Static icons:GeometryKeys.CloudOffOutline}}" Fill="Gray" Stretch="Uniform" Width="48" Height="48" HorizontalAlignment="Center" Margin="0,0,0,10"/>
                 <TextBlock Text="未連携です" FontSize="16" FontWeight="Bold" HorizontalAlignment="Center" Foreground="Gray"/>
                 <TextBlock Text="「連携」タブからサインインしてください" Margin="0,5,0,0" HorizontalAlignment="Center" Foreground="Gray"/>
             </StackPanel>

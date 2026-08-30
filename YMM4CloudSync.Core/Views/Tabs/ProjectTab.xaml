@@ -3,7 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-             xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks"
+             xmlns:icons="clr-namespace:YukkuriMovieMaker.Resources.Icons;assembly=YukkuriMovieMaker.Plugin"
              xmlns:vm="clr-namespace:YMM4CloudSync.Core.ViewModels"
              mc:Ignorable="d"
              d:DesignHeight="450" d:DesignWidth="300"
@@ -46,7 +46,7 @@
                     Padding="5,2"
                     Command="{Binding RefreshCommand}"
                     ToolTip="更新">
-                <iconPacks:PackIconMaterial Kind="Refresh" Width="12" Height="12"/>
+                <Path Data="{DynamicResource {x:Static icons:GeometryKeys.Refresh}}" Fill="{Binding Path=(TextElement.Foreground), RelativeSource={RelativeSource Self}}" Stretch="Uniform" Width="12" Height="12"/>
             </Button>
         </Grid>
 
@@ -87,17 +87,17 @@
                                 <Button Padding="4" Margin="2,0" ToolTip="開く"
                                         Command="{Binding DataContext.OpenCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                         CommandParameter="{Binding}">
-                                    <iconPacks:PackIconMaterial Kind="FolderOpen" Width="14" Height="14"/>
+                                    <Path Data="{DynamicResource {x:Static icons:GeometryKeys.FolderOpen}}" Fill="{Binding Path=(TextElement.Foreground), RelativeSource={RelativeSource Self}}" Stretch="Uniform" Width="14" Height="14"/>
                                 </Button>
                                 <Button Padding="4" Margin="2,0" ToolTip="ダウンロード"
                                         Command="{Binding DataContext.DownloadCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                         CommandParameter="{Binding}">
-                                    <iconPacks:PackIconMaterial Kind="Download" Width="14" Height="14"/>
+                                    <Path Data="{DynamicResource {x:Static icons:GeometryKeys.Download}}" Fill="{Binding Path=(TextElement.Foreground), RelativeSource={RelativeSource Self}}" Stretch="Uniform" Width="14" Height="14"/>
                                 </Button>
                                 <Button Padding="4" Margin="2,0" ToolTip="削除"
                                         Command="{Binding DataContext.DeleteCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                         CommandParameter="{Binding}">
-                                    <iconPacks:PackIconMaterial Kind="Delete" Width="14" Height="14" Foreground="Red"/>
+                                    <Path Data="{DynamicResource {x:Static icons:GeometryKeys.Delete}}" Fill="Red" Stretch="Uniform" Width="14" Height="14"/>
                                 </Button>
                             </StackPanel>
 
@@ -122,8 +122,8 @@
                         </Style.Triggers>
                     </Style>
                 </StackPanel.Style>
-                <iconPacks:PackIconMaterial Kind="CloudOffOutline" Width="48" Height="48"
-                                            HorizontalAlignment="Center" Foreground="Gray" Margin="0,0,0,10"/>
+                <Path Data="{DynamicResource {x:Static icons:GeometryKeys.CloudOffOutline}}" Fill="Gray" Stretch="Uniform" Width="48" Height="48"
+                                            HorizontalAlignment="Center" Margin="0,0,0,10"/>
                 <TextBlock Text="未連携です" FontSize="16" FontWeight="Bold"
                            HorizontalAlignment="Center" Foreground="Gray"/>
                 <TextBlock Text="「連携」タブからサインインしてください" Margin="0,5,0,0"
@@ -155,7 +155,7 @@
                 Command="{Binding UploadCommand}"
                 ToolTip="{Binding UploadBlockedReason}">
             <StackPanel Orientation="Horizontal">
-                <iconPacks:PackIconMaterial Kind="CloudUpload" Width="18" Height="18" Margin="0,0,8,0"/>
+                <Path Data="{DynamicResource {x:Static icons:GeometryKeys.CloudUpload}}" Fill="{Binding Path=(TextElement.Foreground), RelativeSource={RelativeSource Self}}" Stretch="Uniform" Width="18" Height="18" Margin="0,0,8,0"/>
                 <TextBlock Text="プロジェクトを保存" VerticalAlignment="Center"/>
             </StackPanel>
         </Button>
@@ -166,7 +166,7 @@
                 Command="{Binding ExportCommand}"
                 ToolTip="クラウドにアップロードせず、プロジェクトを .ymmx ファイルとして書き出します。">
             <StackPanel Orientation="Horizontal">
-                <iconPacks:PackIconMaterial Kind="PackageVariantClosed" Width="16" Height="16" Margin="0,0,8,0"/>
+                <Path Data="{DynamicResource {x:Static icons:GeometryKeys.PackageVariantClosed}}" Fill="{Binding Path=(TextElement.Foreground), RelativeSource={RelativeSource Self}}" Stretch="Uniform" Width="16" Height="16" Margin="0,0,8,0"/>
                 <TextBlock Text="YMMX ファイルとして書き出し" VerticalAlignment="Center" FontSize="12"/>
             </StackPanel>
         </Button>
