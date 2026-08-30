@@ -36,10 +36,6 @@ public static class YmmxPacker
 
     internal const string DirectoryAssetFolder = "tachie";
 
-    internal const long MaxDirectoryBytes = 512L * 1024 * 1024;
-
-    internal const int MaxDirectoryFiles = 20000;
-
     public static PackResult Pack(string ymmpPath, string outputYmmxPath, string projectName,
         IProgress<double>? progress = null, CancellationToken cancellationToken = default)
     {
@@ -69,7 +65,7 @@ public static class YmmxPacker
             var directories = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             var usedDirectoryNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-            CollectDirectories(json, directories, usedDirectoryNames, missingFiles);
+            CollectDirectories(json, directories, usedDirectoryNames);
             CollectAndRewritePaths(json, assetsDir, filePaths, usedFileNames, missingFiles, directories);
 
             var packList = new List<(string Source, string RelativeDest)>();
@@ -158,8 +154,7 @@ public static class YmmxPacker
     internal static void CollectDirectories(
         JsonNode node,
         Dictionary<string, string> directories,
-        HashSet<string> usedNames,
-        List<string> oversizedDirectories)
+        HashSet<string> usedNames)
     {
         switch (node)
         {
@@ -173,14 +168,14 @@ public static class YmmxPacker
                         if (prop.Value is not JsonValue value) continue;
                         if (!value.TryGetValue<string>(out var declared)) continue;
 
-                        RegisterDirectory(declared, directories, usedNames, oversizedDirectories);
+                        RegisterDirectory(declared, directories, usedNames);
                     }
                 }
 
                 foreach (var prop in obj)
                 {
                     if (prop.Value != null)
-                        CollectDirectories(prop.Value, directories, usedNames, oversizedDirectories);
+                        CollectDirectories(prop.Value, directories, usedNames);
                 }
 
                 break;
@@ -190,7 +185,7 @@ public static class YmmxPacker
                 foreach (var item in arr)
                 {
                     if (item != null)
-                        CollectDirectories(item, directories, usedNames, oversizedDirectories);
+                        CollectDirectories(item, directories, usedNames);
                 }
 
                 break;
@@ -210,8 +205,7 @@ public static class YmmxPacker
     private static void RegisterDirectory(
         string? declared,
         Dictionary<string, string> directories,
-        HashSet<string> usedNames,
-        List<string> oversizedDirectories)
+        HashSet<string> usedNames)
     {
         if (string.IsNullOrWhiteSpace(declared)) return;
         if (!Path.IsPathRooted(declared)) return;
@@ -232,12 +226,6 @@ public static class YmmxPacker
         if (!Directory.Exists(normalized)) return;
         if (Path.GetPathRoot(normalized)?.TrimEnd(Path.DirectorySeparatorChar) == normalized) return;
 
-        if (!IsWithinLimits(normalized))
-        {
-            if (!oversizedDirectories.Contains(normalized)) oversizedDirectories.Add(normalized);
-            return;
-        }
-
         var name = PathTagResolver.SanitizeFileName(Path.GetFileName(normalized), "tachie");
         var unique = name;
         var counter = 1;
@@ -249,31 +237,6 @@ public static class YmmxPacker
         }
 
         directories[normalized] = unique;
-    }
-
-    private static bool IsWithinLimits(string directory)
-    {
-        try
-        {
-            long total = 0;
-            var count = 0;
-
-            foreach (var file in Directory.EnumerateFiles(directory, "*", SearchOption.AllDirectories))
-            {
-                count++;
-                if (count > MaxDirectoryFiles) return false;
-
-                total += new FileInfo(file).Length;
-                if (total > MaxDirectoryBytes) return false;
-            }
-
-            return true;
-        }
-        catch (Exception ex)
-        {
-            Debug.WriteLine($"[YmmxPacker] Failed to measure {directory}: {ex.Message}");
-            return false;
-        }
     }
 
     internal static string? TryRewriteUnderDirectory(string declared, Dictionary<string, string> directories)
