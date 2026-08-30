@@ -1,7 +1,7 @@
 ◆ YMM4 Cloud Sync
 
 YMM4 Cloud Sync は、YukkuriMovieMaker4（以下、YMM4）のプロジェクトを
-クラウドストレージと同期・管理**するためのプラグインです。
+クラウドストレージと同期・管理するためのプラグインです。
 
 ■ 主な機能
 
@@ -9,17 +9,20 @@ YMM4 Cloud Sync は、YukkuriMovieMaker4（以下、YMM4）のプロジェクト
 - クラウド上のプロジェクト一覧表示
 - プロジェクトのダウンロード・削除
 - クラウド上のプロジェクトを直接開いて編集
+- プロジェクトを `.ymmx` ファイルとしてローカルに書き出し（クラウド連携なしで利用可能）
+- 素材（アセット）のクラウド保存と、タイムラインへのドラッグ＆ドロップ配置
 
 現在対応しているサービスは以下の通りになります。
 - Google Drive
 - Dropbox
 - OneDrive
+- WebDAV
 ※ 今後、対応クラウドサービスの追加を予定しています。
 
 ■ 動作確認済みバージョン
 
-- YukkuriMovieMaker v4.48.0.5
-- YukkuriMovieMaker v4.48.0.5 Lite
+- YukkuriMovieMaker v4.55.1.1
+- YukkuriMovieMaker v4.55.1.1 Lite
 
 ■ 前提条件
 
@@ -30,6 +33,7 @@ YMM4 Cloud Sync は、YukkuriMovieMaker4（以下、YMM4）のプロジェクト
 1. YMM4 のツールタブから **YMM4 Cloud Sync** を開きます。
 2. 「連携」タブでクラウドサービスと連携します。
 3. プロジェクト一覧からアップロード・ダウンロード・開く操作を行います。
+4. 「アセット」タブで素材をクラウドに置き、タイムラインへドラッグして配置します。
 
 ■ 注意事項
 
