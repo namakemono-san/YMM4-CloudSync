@@ -232,6 +232,9 @@ public class GoogleDriveService : ICloudStorageService, IDisposable
                 if (result.Exception is OperationCanceledException) throw result.Exception;
                 cancellationToken.ThrowIfCancellationRequested();
 
+                if (CloudErrors.IsStorageQuotaExceeded(result.Exception))
+                    throw new CloudStorageFullException(CloudErrors.StorageQuotaMessage(ServiceName));
+
                 throw new Exception($"アップロードに失敗しました: {result.Exception?.Message}");
             }
 

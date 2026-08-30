@@ -686,6 +686,9 @@ public sealed class OneDriveService : ICloudStorageService, IDisposable
             _ => $"OneDrive 操作に失敗しました。(HTTP {code})"
         };
 
+        if (code is 507 || CloudErrors.IsStorageQuotaExceeded(new InvalidOperationException(graphMessage ?? "")))
+            throw new CloudStorageFullException(CloudErrors.StorageQuotaMessage("OneDrive"));
+
         if (!string.IsNullOrWhiteSpace(graphMessage))
             message = $"{message}\n\n詳細: {graphMessage}";
 

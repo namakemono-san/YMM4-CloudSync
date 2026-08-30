@@ -325,9 +325,16 @@ public class DropboxService : ICloudStorageService, IDisposable
 
         var fileInfo = new FileInfo(localPath);
 
-        return fileInfo.Length >= UploadLimitBytes
-            ? await UploadLargeFileAsync(client, localPath, uploadPath, fileInfo.Length, progress, cancellationToken)
-            : await UploadSmallFileAsync(client, localPath, uploadPath, fileInfo.Length, progress, cancellationToken);
+        try
+        {
+            return fileInfo.Length >= UploadLimitBytes
+                ? await UploadLargeFileAsync(client, localPath, uploadPath, fileInfo.Length, progress, cancellationToken)
+                : await UploadSmallFileAsync(client, localPath, uploadPath, fileInfo.Length, progress, cancellationToken);
+        }
+        catch (Exception ex) when (CloudErrors.IsStorageQuotaExceeded(ex))
+        {
+            throw new CloudStorageFullException(CloudErrors.StorageQuotaMessage(ServiceName));
+        }
     }
 
     public Task<string> UploadFileToFolderAsync(string localPath, string? parentFolderId, string fileName,
