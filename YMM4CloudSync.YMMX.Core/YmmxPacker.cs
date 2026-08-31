@@ -36,6 +36,10 @@ public static class YmmxPacker
 
     internal const string DirectoryAssetFolder = "tachie";
 
+    internal const string SequenceAssetFolder = "sequence";
+
+    private sealed record PackedSequence(string FolderName, List<string> Frames);
+
     public static PackResult Pack(string ymmpPath, string outputYmmxPath, string projectName,
         IProgress<double>? progress = null, CancellationToken cancellationToken = default)
     {
@@ -64,9 +68,12 @@ public static class YmmxPacker
             var usedFileNames = new Dictionary<string, HashSet<string>>();
             var directories = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             var usedDirectoryNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var sequences = new Dictionary<string, PackedSequence>(StringComparer.OrdinalIgnoreCase);
+            var usedSequenceNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             CollectDirectories(json, directories, usedDirectoryNames);
-            CollectAndRewritePaths(json, assetsDir, filePaths, usedFileNames, missingFiles, directories);
+            CollectAndRewritePaths(json, assetsDir, filePaths, usedFileNames, missingFiles, directories,
+                sequences, usedSequenceNames);
 
             var packList = new List<(string Source, string RelativeDest)>();
 
@@ -80,6 +87,17 @@ public static class YmmxPacker
 
                 var relativeDest = Path.GetRelativePath(virtualRoot, newPath).Replace('\\', '/');
                 packList.Add((original, relativeDest));
+            }
+
+            foreach (var (_, sequence) in sequences)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                foreach (var frame in sequence.Frames)
+                {
+                    packList.Add((frame,
+                        $"assets/{SequenceAssetFolder}/{sequence.FolderName}/{Path.GetFileName(frame)}"));
+                }
             }
 
             foreach (var (source, destName) in directories)
@@ -279,6 +297,8 @@ public static class YmmxPacker
         Dictionary<string, HashSet<string>> usedFileNames,
         List<string> missingFiles,
         Dictionary<string, string> directories,
+        Dictionary<string, PackedSequence> sequences,
+        HashSet<string> usedSequenceNames,
         bool isRoot = true)
     {
         switch (node)
@@ -306,8 +326,13 @@ public static class YmmxPacker
                     if (!string.IsNullOrEmpty(originalPath) && Path.IsPathRooted(originalPath))
                     {
                         var normalizedPath = Path.GetFullPath(originalPath);
-                        
-                        if (filePaths.TryGetValue(normalizedPath, out var existingFullPath))
+
+                        if (IsSequenceItem(obj, normalizedPath)
+                            && ImageSequence.TryGetFrames(normalizedPath) is { } frames)
+                        {
+                            obj["FilePath"] = RegisterSequence(normalizedPath, frames, sequences, usedSequenceNames);
+                        }
+                        else if (filePaths.TryGetValue(normalizedPath, out var existingFullPath))
                         {
                             var relativeFromAssets = Path.GetRelativePath(assetsDir, existingFullPath);
                             var relativePath = $"assets/{relativeFromAssets}".Replace("\\", "/");
@@ -340,7 +365,7 @@ public static class YmmxPacker
                     if (prop.Value != null)
                     {
                         CollectAndRewritePaths(prop.Value, assetsDir, filePaths, usedFileNames, missingFiles,
-                            directories, false);
+                            directories, sequences, usedSequenceNames, false);
                     }
                 }
 
@@ -353,13 +378,52 @@ public static class YmmxPacker
                     if (item != null)
                     {
                         CollectAndRewritePaths(item, assetsDir, filePaths, usedFileNames, missingFiles,
-                            directories, false);
+                            directories, sequences, usedSequenceNames, false);
                     }
                 }
 
                 break;
             }
         }
+    }
+
+    private static bool IsSequenceItem(JsonObject obj, string path)
+    {
+        if (!ImageSequence.IsStillImage(path)) return false;
+        if (!obj.TryGetPropertyValue("$type", out var typeNode)) return false;
+        if (typeNode is not JsonValue typeValue) return false;
+        if (!typeValue.TryGetValue<string>(out var typeName)) return false;
+
+        return typeName.StartsWith("YukkuriMovieMaker.Project.Items.VideoItem", StringComparison.Ordinal);
+    }
+
+    private static string RegisterSequence(
+        string headPath,
+        List<string> frames,
+        Dictionary<string, PackedSequence> sequences,
+        HashSet<string> usedNames)
+    {
+        var headName = Path.GetFileName(headPath);
+
+        if (!sequences.TryGetValue(headPath, out var existing))
+        {
+            var baseName = PathTagResolver.SanitizeFileName(
+                Path.GetFileNameWithoutExtension(headPath), "sequence");
+
+            var unique = baseName;
+            var counter = 1;
+
+            while (!usedNames.Add(unique))
+            {
+                unique = $"{baseName}_{counter}";
+                counter++;
+            }
+
+            existing = new PackedSequence(unique, frames);
+            sequences[headPath] = existing;
+        }
+
+        return $"assets/{SequenceAssetFolder}/{existing.FolderName}/{headName}";
     }
 
     private static void RewriteDirectoryReferences(JsonObject obj, Dictionary<string, string> directories)
