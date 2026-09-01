@@ -7,6 +7,7 @@ using System.Windows.Threading;
 using YMM4CloudSync.Core.Commons.Configuration;
 using YMM4CloudSync.Core.Commons.Network;
 using YMM4CloudSync.Core.Commons.Utilities;
+using YMM4CloudSync.Core.Models;
 using YMM4CloudSync.Core.ViewModels;
 using YMM4CloudSync.Core.Views;
 using YukkuriMovieMaker.Plugin;
@@ -20,11 +21,7 @@ public class Plugin : IToolPlugin, IDisposable
     public Type ViewModelType => typeof(ToolViewModel);
     public Type ViewType => typeof(ToolView);
     
-    private static readonly string PluginDirectory = Path.GetDirectoryName(typeof(Plugin).Assembly.Location)!;
-    private static readonly string LauncherPath = Path.Combine(PluginDirectory, "YMM4CloudSync.YMMX.Launcher.exe");
-    private static readonly string IconPath = Path.Combine(PluginDirectory, "Resources", "YMMX_logo.ico");
-
-    private readonly YmmxFileExtension _ymmxFileExtension = new(LauncherPath, IconPath);
+    private readonly YmmxFileExtension _ymmxFileExtension = new();
 
     public Plugin()
     {
@@ -33,7 +30,7 @@ public class Plugin : IToolPlugin, IDisposable
 
         var settings = SettingsManager.Load();
 
-        CheckFileAssociation();
+        CheckFileAssociation(settings);
 
         Task.Run(() =>
         {
@@ -200,18 +197,24 @@ public class Plugin : IToolPlugin, IDisposable
         }
     }
     
-    private void CheckFileAssociation()
+    private void CheckFileAssociation(UserSettings settings)
     {
         if (_ymmxFileExtension.IsRegistered()) return;
+        if (!settings.PromptForFileAssociation) return;
 
         var result = MessageBox.Show(
-            "YMM4 Cloud Sync用の拡張子がゆっくりMovieMaker4に関連付けられていません。\n以下の拡張子を関連付けしますか？\n\n- .ymmx: YMM4 Cloud Sync用拡張プロジェクトファイル\n\n関連付けると、各ファイルをダブルクリックでYMM4を起動できるようになります。",
+            "YMM4 Cloud Sync用の拡張子がゆっくりMovieMaker4に関連付けられていません。\n以下の拡張子を関連付けしますか？\n\n- .ymmx: YMM4 Cloud Sync用拡張プロジェクトファイル\n\n関連付けると、各ファイルをダブルクリックでYMM4を起動できるようになります。\n\n「いいえ」を選ぶと、次回からは表示されなくなります。\n設定タブからいつでも関連付けできます。",
             "確認",
             MessageBoxButton.YesNo,
             MessageBoxImage.None
         );
 
-        if (result != MessageBoxResult.Yes) return;
+        if (result != MessageBoxResult.Yes)
+        {
+            settings.PromptForFileAssociation = false;
+            SettingsManager.Save(settings);
+            return;
+        }
 
         try
         {

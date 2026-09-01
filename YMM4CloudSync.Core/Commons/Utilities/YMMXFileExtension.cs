@@ -1,4 +1,5 @@
 ﻿using System.Diagnostics.CodeAnalysis;
+using System.IO;
 using Microsoft.Win32;
 
 namespace YMM4CloudSync.Core.Commons.Utilities;
@@ -8,6 +9,14 @@ public class YmmxFileExtension(string launcherPath, string iconPath)
     private const string Extension = ".ymmx";
     private const string ProgId = "YMM4CloudSync.YMMX";
     private const string ProdName = "YMM4 Cloud Sync プロジェクトファイル";
+
+    public YmmxFileExtension() : this(DefaultLauncherPath, DefaultIconPath)
+    {
+    }
+
+    private static readonly string PluginDirectory = Path.GetDirectoryName(typeof(YmmxFileExtension).Assembly.Location)!;
+    private static string DefaultLauncherPath => Path.Combine(PluginDirectory, "YMM4CloudSync.YMMX.Launcher.exe");
+    private static string DefaultIconPath => Path.Combine(PluginDirectory, "Resources", "YMMX_logo.ico");
 
     public bool IsRegistered()
     {

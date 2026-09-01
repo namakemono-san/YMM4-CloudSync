@@ -12,6 +12,7 @@ public class UserSettings : INotifyPropertyChanged
         ProjectDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "YMM4CloudSync", "Projects");
         AssetDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "YMM4CloudSync", "Assets");
         EnableUpdateCheck = true;
+        PromptForFileAssociation = true;
     }
 
     public string CacheDirectory
@@ -33,6 +34,12 @@ public class UserSettings : INotifyPropertyChanged
     }
 
     public bool EnableUpdateCheck
+    {
+        get;
+        set => SetProperty(ref field, value);
+    }
+
+    public bool PromptForFileAssociation
     {
         get;
         set => SetProperty(ref field, value);

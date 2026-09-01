@@ -44,6 +44,8 @@ public class ToolViewModel : IDisposable
     public ReactiveCommand ResetCacheDirCommand { get; }
     public ReactiveCommand ResetAssetDirCommand { get; }
 
+    public ReactiveCommand AssociateFileExtensionCommand { get; }
+
     private static string DefaultProjectDir => PathHelper.DefaultProjectDirectory;
 
     private static string DefaultCacheDir => PathHelper.DefaultCacheDirectory;
@@ -137,6 +139,62 @@ public class ToolViewModel : IDisposable
         ResetAssetDirCommand = new ReactiveCommand()
             .WithSubscribe(() => AssetDirectory.Value = DefaultAssetDir)
             .AddTo(_disposables);
+
+        AssociateFileExtensionCommand = new ReactiveCommand()
+            .WithSubscribe(AssociateFileExtension)
+            .AddTo(_disposables);
+    }
+
+    private void AssociateFileExtension()
+    {
+        var extension = new YmmxFileExtension();
+
+        if (extension.IsRegistered())
+        {
+            System.Windows.MessageBox.Show(
+                "既に .ymmx がYMM4に関連付けられています。",
+                "YMM4 Cloud Sync",
+                System.Windows.MessageBoxButton.OK,
+                System.Windows.MessageBoxImage.Information);
+            return;
+        }
+
+        var result = System.Windows.MessageBox.Show(
+            "以下の拡張子を関連付けしますか？\n\n- .ymmx: YMM4 Cloud Sync用拡張プロジェクトファイル\n\n関連付けると、各ファイルをダブルクリックでYMM4を起動できるようになります。",
+            "確認",
+            System.Windows.MessageBoxButton.YesNo,
+            System.Windows.MessageBoxImage.None);
+
+        if (result != System.Windows.MessageBoxResult.Yes) return;
+
+        try
+        {
+            extension.Register();
+            Settings.PromptForFileAssociation = true;
+            SettingsManager.Save(Settings);
+
+            System.Windows.MessageBox.Show(
+                "関連付けが完了しました。",
+                "YMM4 CloudSync",
+                System.Windows.MessageBoxButton.OK,
+                System.Windows.MessageBoxImage.Information);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            System.Windows.MessageBox.Show(
+                "ファイル関連付けの登録に失敗しました。\n\n管理者権限が必要な場合があります。\nYMM4を管理者として実行するか、手動でレジストリを設定してください。",
+                "権限エラー",
+                System.Windows.MessageBoxButton.OK,
+                System.Windows.MessageBoxImage.Warning);
+        }
+        catch (Exception ex)
+        {
+            System.Windows.MessageBox.Show(
+                $"ファイル関連付けの登録に失敗しました。\n\n{ex.Message}",
+                "エラー",
+                System.Windows.MessageBoxButton.OK,
+                System.Windows.MessageBoxImage.Error);
+        }
     }
 
     public string ResolvedAssetDirectory => PathHelper.ResolvePath(Settings.AssetDirectory, Settings.ProjectDirectory);
