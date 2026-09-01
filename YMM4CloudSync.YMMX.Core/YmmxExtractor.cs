@@ -539,7 +539,10 @@ public static class YmmxExtractor
                     && filePathValue.TryGetValue<string>(out var relativePath)
                     && !string.IsNullOrEmpty(relativePath))
                 {
-                    obj["FilePath"] = ResolveAssetPath(relativePath, baseDirectory, externalReferences);
+                    var resolved = ResolveAssetPath(relativePath, baseDirectory, externalReferences);
+
+                    obj["FilePath"] = resolved;
+                    RewriteSiblingPaths(obj, relativePath, resolved);
                 }
 
                 RewriteDirectoryReferences(obj, baseDirectory, externalReferences);
@@ -563,6 +566,30 @@ public static class YmmxExtractor
                 break;
             }
         }
+    }
+
+    /// <summary>
+    /// Mirrors YmmxPacker.RewriteSiblingPaths: a sibling property that held the same value as the
+    /// original (packed) FilePath is repointed to the same resolved value, so validity guards like
+    /// PsdShapeParameter.EnableLayersFilePath keep matching FilePath after extraction.
+    /// </summary>
+    private static void RewriteSiblingPaths(JsonObject obj, string originalValue, string newValue)
+    {
+        List<string>? keys = null;
+
+        foreach (var prop in obj)
+        {
+            if (prop.Key == "FilePath") continue;
+            if (prop.Value is not JsonValue value) continue;
+            if (!value.TryGetValue<string>(out var candidate)) continue;
+            if (!string.Equals(candidate, originalValue, StringComparison.Ordinal)) continue;
+
+            (keys ??= []).Add(prop.Key);
+        }
+
+        if (keys == null) return;
+
+        foreach (var key in keys) obj[key] = newValue;
     }
 
     private static void RewriteDirectoryReferences(

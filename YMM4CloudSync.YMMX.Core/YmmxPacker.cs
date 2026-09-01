@@ -326,17 +326,17 @@ public static class YmmxPacker
                     if (!string.IsNullOrEmpty(originalPath) && Path.IsPathRooted(originalPath))
                     {
                         var normalizedPath = Path.GetFullPath(originalPath);
+                        string newValue;
 
                         if (IsSequenceItem(obj, normalizedPath)
                             && ImageSequence.TryGetFrames(normalizedPath) is { } frames)
                         {
-                            obj["FilePath"] = RegisterSequence(normalizedPath, frames, sequences, usedSequenceNames);
+                            newValue = RegisterSequence(normalizedPath, frames, sequences, usedSequenceNames);
                         }
                         else if (filePaths.TryGetValue(normalizedPath, out var existingFullPath))
                         {
                             var relativeFromAssets = Path.GetRelativePath(assetsDir, existingFullPath);
-                            var relativePath = $"assets/{relativeFromAssets}".Replace("\\", "/");
-                            obj["FilePath"] = relativePath;
+                            newValue = $"assets/{relativeFromAssets}".Replace("\\", "/");
                         }
                         else
                         {
@@ -355,8 +355,11 @@ public static class YmmxPacker
                             var fullPath = Path.Combine(assetsDir, subFolder, uniqueFileName);
 
                             filePaths[normalizedPath] = fullPath;
-                            obj["FilePath"] = relativePath;
+                            newValue = relativePath;
                         }
+
+                        obj["FilePath"] = newValue;
+                        RewriteSiblingPaths(obj, originalPath, normalizedPath, newValue);
                     }
                 }
 
@@ -424,6 +427,49 @@ public static class YmmxPacker
         }
 
         return $"assets/{SequenceAssetFolder}/{existing.FolderName}/{headName}";
+    }
+
+    /// <summary>
+    /// Some parameters keep a second copy of a file path as a validity guard for other state
+    /// (e.g. PsdShapeParameter.EnableLayersFilePath, which must match FilePath exactly or the
+    /// associated layer selection is silently discarded by YMM4). Any sibling property in the
+    /// same object whose value equals the original FilePath is rewritten to the new value so the
+    /// guard keeps matching after the path is repointed into the package.
+    /// </summary>
+    private static void RewriteSiblingPaths(
+        JsonObject obj, string originalPath, string normalizedOriginalPath, string newValue)
+    {
+        List<string>? keys = null;
+
+        foreach (var prop in obj)
+        {
+            if (prop.Key == "FilePath") continue;
+            if (prop.Value is not JsonValue value) continue;
+            if (!value.TryGetValue<string>(out var candidate) || string.IsNullOrEmpty(candidate)) continue;
+            if (!PathEqualsOriginal(candidate, originalPath, normalizedOriginalPath)) continue;
+
+            (keys ??= []).Add(prop.Key);
+        }
+
+        if (keys == null) return;
+
+        foreach (var key in keys) obj[key] = newValue;
+    }
+
+    private static bool PathEqualsOriginal(string candidate, string originalPath, string normalizedOriginalPath)
+    {
+        if (string.Equals(candidate, originalPath, StringComparison.OrdinalIgnoreCase)) return true;
+        if (!Path.IsPathRooted(candidate)) return false;
+
+        try
+        {
+            return string.Equals(Path.GetFullPath(candidate), normalizedOriginalPath, StringComparison.OrdinalIgnoreCase);
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[YmmxPacker] Invalid sibling path reference: {ex.Message}");
+            return false;
+        }
     }
 
     private static void RewriteDirectoryReferences(JsonObject obj, Dictionary<string, string> directories)
